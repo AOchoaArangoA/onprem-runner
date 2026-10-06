@@ -15,13 +15,27 @@ from conftest import write_pipeline
 from onprem_runner.store import RunStore
 from onprem_runner.ui import UIServer, create_server
 
+
+class NoScheduler:
+    available = False
+
+    def install(self, *args: Any, **kwargs: Any) -> str:
+        raise AssertionError("not expected")
+
+    def remove(self, *args: Any, **kwargs: Any) -> bool:
+        raise AssertionError("not expected")
+
+    def list_tasks(self) -> dict[str, Any]:
+        return {}
+
+
 PIPELINE = "name: demo\nsteps:\n  - {id: a, type: python, script: scripts/ok.py}\n"
 
 
 @pytest.fixture
 def server(project: Path) -> Iterator[UIServer]:
     write_pipeline(project, PIPELINE)
-    srv = create_server(project, "127.0.0.1", 0)
+    srv = create_server(project, "127.0.0.1", 0, scheduler=NoScheduler())
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     yield srv
     srv.shutdown()
@@ -119,7 +133,7 @@ def test_run_detail_rejects_path_traversal(server: UIServer) -> None:
 
 def test_invalid_pipeline_is_reported_not_hidden(project: Path) -> None:
     write_pipeline(project, "name: broken\nsteps:\n  - {id: a, type: nope}\n")
-    srv = create_server(project, "127.0.0.1", 0)
+    srv = create_server(project, "127.0.0.1", 0, scheduler=NoScheduler())
     try:
         state = srv.state.snapshot()
     finally:

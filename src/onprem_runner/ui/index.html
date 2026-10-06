@@ -93,6 +93,13 @@
   .spark i { width: 8px; height: 18px; border-radius: 2px; background: var(--pending-bg); display: block; }
   .spark i.success { background: var(--success); } .spark i.failed { background: var(--failed); }
   .spark i.timeout { background: var(--timeout); }
+  .sched { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted);
+    border-top: 1px dashed var(--border); padding-top: 10px; }
+  .sched .what { color: var(--text); font-weight: 600; }
+  .sched .tag { padding: 1px 8px; border-radius: 999px; font-weight: 600; }
+  .link-btn { background: none; border: 1px solid var(--border); color: var(--text); border-radius: 6px;
+    padding: 2px 9px; font-size: 12px; margin-left: auto; }
+  .link-btn:disabled { opacity: .5; cursor: wait; }
   .card-foot { display: flex; align-items: center; gap: 10px; margin-top: auto; }
   .run-btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 6px 14px; font-weight: 600; }
   .run-btn:disabled { opacity: .45; cursor: not-allowed; }
@@ -180,7 +187,7 @@
 const TOKEN = "__TOKEN__";
 const STATUS_LABEL = { success: "Exitoso", failed: "Fallido", timeout: "Timeout", skipped: "Omitido",
   running: "Ejecutando", pending: "Pendiente", none: "Sin ejecuciones" };
-let state = { pipelines: [], runs: [], active: [], root: "" };
+let state = { pipelines: [], runs: [], active: [], root: "", scheduler: { available: false, loaded: false } };
 let timer = null, lastText = "", lastRender = 0;
 
 const $ = (s) => document.querySelector(s);
@@ -203,6 +210,56 @@ function fmtWhen(iso) {
   if (diff < 3600) return "hace " + Math.floor(diff / 60) + " min";
   if (diff < 86400) return "hace " + Math.floor(diff / 3600) + " h";
   return d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+const DAYS = { MON: "lun", TUE: "mar", WED: "mié", THU: "jue", FRI: "vie", SAT: "sáb", SUN: "dom" };
+function describeSchedule(s) {
+  const n = s.every;
+  switch (s.frequency) {
+    case "minutes": return n == 1 ? "Cada minuto" : "Cada " + n + " min";
+    case "hourly": return n == 1 ? "Cada hora" : "Cada " + n + " h";
+    case "daily": return (n == 1 ? "Diario" : "Cada " + n + " días") + " a las " + s.at;
+    case "weekly": return (n == 1 ? "Semanal" : "Cada " + n + " semanas") + " · " + s.days.map((d) => DAYS[d]).join(", ") + " a las " + s.at;
+    default: return "Al iniciar el sistema";
+  }
+}
+function fmtNext(iso) {
+  if (!iso) return "–";
+  const d = new Date(iso), t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const days = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 864e5);
+  return days === 0 ? "hoy " + t : days === 1 ? "mañana " + t : d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) + " " + t;
+}
+function scheduleRow(p) {
+  const decl = p.schedule.declared, task = p.schedule.task, sc = state.scheduler;
+  const row = h("div", { class: "sched" });
+  if (!decl && !task) {
+    row.append(h("span", { text: "Sin programación · añade un bloque " }), h("code", { text: "schedule:" }), h("span", { text: " al YAML" }));
+    return row;
+  }
+  row.append(h("span", { text: "⏱" }), h("span", { class: "what", text: decl ? describeSchedule(decl) : "Tarea instalada (sin bloque schedule)" }));
+  if (!sc.available) { row.append(h("span", { class: "tag s-none", text: "instalación solo en Windows" })); return row; }
+  if (sc.error) { row.append(h("span", { class: "tag s-failed", title: sc.error, text: "error al consultar" })); return row; }
+  if (!sc.loaded) { row.append(h("span", { class: "tag s-none", text: "consultando…" })); return row; }
+  if (task) {
+    const off = task.state === "Disabled";
+    row.append(h("span", { class: "tag " + (off ? "s-timeout" : "s-success"), text: off ? "Deshabilitada" : "Programada" }));
+    if (!off) row.append(h("span", { text: "próxima: " + fmtNext(task.next_run) }));
+    row.append(h("button", { class: "link-btn", text: "Quitar", onclick: (e) => changeSchedule(p, "remove", e.target) }));
+  } else {
+    row.append(h("span", { class: "tag s-none", text: "No instalada" }),
+      h("button", { class: "link-btn", text: "Programar", onclick: (e) => changeSchedule(p, "install", e.target) }));
+  }
+  return row;
+}
+async function changeSchedule(p, action, btn) {
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/schedule", { method: "POST", headers: { "Content-Type": "application/json", "X-OPR-Token": TOKEN },
+      body: JSON.stringify({ file: p.file, action }) });
+    const data = await r.json();
+    if (!r.ok) toast(data.error || "No se pudo cambiar la programación", true);
+    else toast(action === "install" ? "Tarea programada: " + p.name : "Tarea eliminada: " + p.name);
+  } catch (e) { toast("No se pudo contactar con el servidor", true); }
+  lastText = ""; refresh();
 }
 function toast(msg, bad) {
   const t = h("div", { class: "toast" + (bad ? " bad" : ""), text: msg });
@@ -241,6 +298,7 @@ function renderStats() {
   const stats = [
     ["Pipelines", state.pipelines.length], ["Ejecuciones (24 h)", day.length],
     ["Tasa de éxito", rate], ["En ejecución", state.active.length],
+    ["Programadas", state.pipelines.filter((p) => p.schedule && p.schedule.task).length],
   ];
   $("#stats").replaceChildren(...stats.map(([l, v]) =>
     h("div", { class: "stat" }, h("div", { class: "label", text: l }), h("div", { class: "value", text: String(v) }))));
@@ -281,6 +339,7 @@ function renderPipelines() {
         h("div", { class: "title" }, h("div", { class: "name", text: p.name }), h("div", { class: "file", text: p.file })),
         badge(p.error ? "failed" : overall)),
       p.error ? h("div", { class: "error-box", text: p.error }) : flow,
+      p.error ? null : scheduleRow(p),
       h("div", { class: "card-foot" }, btn, h("div", { class: "meta" }, when), spark));
   }));
 }

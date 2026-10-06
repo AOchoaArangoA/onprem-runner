@@ -10,9 +10,15 @@ from onprem_runner.config import execution_order, load_config
 from onprem_runner.errors import ConfigError
 from onprem_runner.logging_utils import setup_logging
 from onprem_runner.runner import Runner
+from onprem_runner.scheduler import SchedulerError, TaskScheduler, build_task_xml
 from onprem_runner.store import RunStore
 
 app = typer.Typer(help="Run local/on-premise automation pipelines.", no_args_is_help=True)
+
+schedule_app = typer.Typer(
+    help="Manage Windows Task Scheduler tasks for pipelines.", no_args_is_help=True
+)
+app.add_typer(schedule_app, name="schedule")
 
 PipelineArg = Annotated[Path, typer.Argument(help="Path to the pipeline YAML file.")]
 
@@ -144,6 +150,62 @@ def ui(
         typer.echo("bye")
     finally:
         server.server_close()
+
+
+@schedule_app.command("install")
+def schedule_install(
+    pipeline: PipelineArg,
+    system: Annotated[
+        bool,
+        typer.Option(
+            "--system",
+            help="Run as SYSTEM, even when nobody is logged on (needs an elevated shell).",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Print the task XML, change nothing.")
+    ] = False,
+) -> None:
+    """Register (or update) the pipeline's `schedule:` block as a Windows scheduled task."""
+    try:
+        config = load_config(pipeline, strict_env=False)
+        Runner(config, pipeline.resolve().parent)
+        if config.schedule is None:
+            raise ConfigError(f"{pipeline} has no `schedule:` block")
+        if dry_run:
+            typer.echo(build_task_xml(config.schedule, pipeline, system=system))
+            return
+        name = TaskScheduler().install(pipeline, config.name, config.schedule, system=system)
+    except (ConfigError, SchedulerError) as exc:
+        raise _fail(str(exc)) from exc
+    typer.secho(f"Installed {name}: runs {config.schedule.describe()}", fg=typer.colors.GREEN)
+
+
+@schedule_app.command("remove")
+def schedule_remove(pipeline: PipelineArg) -> None:
+    """Delete the scheduled task of a pipeline."""
+    try:
+        config = load_config(pipeline, strict_env=False)
+        removed = TaskScheduler().remove(pipeline, config.name)
+    except (ConfigError, SchedulerError) as exc:
+        raise _fail(str(exc)) from exc
+    typer.echo("Removed." if removed else "No scheduled task found for this pipeline.")
+
+
+@schedule_app.command("list")
+def schedule_list() -> None:
+    """List every task registered by onprem-runner with its next and last run."""
+    try:
+        tasks = TaskScheduler().list_tasks()
+    except SchedulerError as exc:
+        raise _fail(str(exc)) from exc
+    if not tasks:
+        typer.echo("No scheduled tasks.")
+    for task in tasks.values():
+        typer.echo(
+            f"{task.name}  [{task.state}]  next: {task.next_run or '-'}  "
+            f"last: {task.last_run or '-'} (result {task.last_result})"
+        )
 
 
 @app.command()

@@ -6,3 +6,6 @@ steps:
   - {id: publicar, type: shell, command: echo publicado, needs: [consolidar]}
 notifiers:
   - {type: file, path: 'out/{date}-reporte.json'}
+schedule:
+  frequency: daily
+  at: "07:30"

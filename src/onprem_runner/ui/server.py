@@ -5,6 +5,7 @@ import json
 import logging
 import secrets
 import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from http import HTTPStatus
@@ -19,8 +20,15 @@ import yaml
 from onprem_runner.config import execution_order, load_config
 from onprem_runner.errors import ConfigError
 from onprem_runner.logging_utils import LOGGER_NAME
-from onprem_runner.models import StepResult
+from onprem_runner.models import ScheduleConfig, StepResult
 from onprem_runner.runner import Runner, new_run_id
+from onprem_runner.scheduler import (
+    ScheduledTask,
+    SchedulerBackend,
+    SchedulerError,
+    TaskScheduler,
+    task_name,
+)
 from onprem_runner.store import HISTORY_DIRNAME, RunStore
 
 log = logging.getLogger(LOGGER_NAME)
@@ -29,6 +37,7 @@ LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
 SKIP_DIRS = {"node_modules", "venv", "site-packages", "__pycache__", "dist", "build"}
 MAX_DEPTH = 3
 MAX_BODY = 4096
+SCHEDULE_TTL = 20.0  # seconds between Task Scheduler queries
 
 
 class BusyError(Exception):
@@ -42,6 +51,11 @@ class PipelineInfo:
     name: str
     steps: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
+    schedule: ScheduleConfig | None = None
+
+    @property
+    def task(self) -> str:
+        return task_name(self.file, self.name)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -52,11 +66,51 @@ class PipelineInfo:
         }
 
 
+class ScheduleCache:
+    """Task Scheduler state, refreshed in the background so /api/state never blocks."""
+
+    def __init__(self, backend: SchedulerBackend, ttl: float = SCHEDULE_TTL) -> None:
+        self.backend = backend
+        self.ttl = ttl
+        self._tasks: dict[str, ScheduledTask] | None = None
+        self._error: str | None = None
+        self._fetched = float("-inf")
+        self._refreshing = False
+        self._lock = threading.Lock()
+
+    def get(self) -> tuple[dict[str, ScheduledTask] | None, str | None]:
+        with self._lock:
+            stale = time.monotonic() - self._fetched > self.ttl
+            start = stale and not self._refreshing and self.backend.available
+            if start:
+                self._refreshing = True
+        if start:
+            threading.Thread(target=self.refresh, daemon=True).start()
+        with self._lock:
+            return self._tasks, self._error
+
+    def refresh(self) -> None:
+        try:
+            tasks, error = self.backend.list_tasks(), None
+        except SchedulerError as exc:
+            tasks, error = None, str(exc)
+        with self._lock:
+            self._tasks, self._error = tasks, error
+            self._fetched = time.monotonic()
+            self._refreshing = False
+
+
 class UIState:
     """Pipelines discovered under ``root``, plus the runs started from the UI."""
 
-    def __init__(self, root: Path, token: str | None = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        token: str | None = None,
+        scheduler: SchedulerBackend | None = None,
+    ) -> None:
         self.root = root.resolve()
+        self.scheduler = ScheduleCache(scheduler or TaskScheduler())
         self.token = token or secrets.token_urlsafe(24)
         self._lock = threading.Lock()
         self._active: dict[str, dict[str, Any]] = {}
@@ -86,6 +140,7 @@ class UIState:
         try:
             config = load_config(path, strict_env=False)
             Runner(config, path.parent)  # validates plugin parameters too
+            info.schedule = config.schedule
             info.steps = [
                 {"id": s.id, "type": s.type, "needs": s.needs}
                 for s in execution_order(config.steps)
@@ -110,11 +165,27 @@ class UIState:
             run.pop("pipeline_file", None)
         with self._lock:
             active = [dict(a, steps=dict(a["steps"])) for a in self._active.values()]
+        tasks, schedule_error = self.scheduler.get()
+        entries = []
+        for p in pipelines:
+            entry = p.to_dict()
+            task = tasks.get(p.task) if tasks is not None else None
+            entry["schedule"] = {
+                "declared": p.schedule.model_dump() if p.schedule else None,
+                "description": p.schedule.describe() if p.schedule else None,
+                "task": task.to_dict() if task else None,
+            }
+            entries.append(entry)
         return {
             "root": str(self.root),
-            "pipelines": [p.to_dict() for p in pipelines],
+            "pipelines": entries,
             "runs": runs,
             "active": active,
+            "scheduler": {
+                "available": self.scheduler.backend.available,
+                "loaded": tasks is not None,
+                "error": schedule_error,
+            },
         }
 
     def _relative(self, pipeline_file: str | None) -> str | None:
@@ -134,6 +205,25 @@ class UIState:
             record["file"] = rel
             record.pop("pipeline_file", None)
         return record
+
+    # -- scheduling --------------------------------------------------------
+    def change_schedule(self, rel: str, action: str) -> None:
+        info = self.find(rel)
+        if info is None:
+            raise ConfigError(f"unknown pipeline {rel!r}")
+        backend = self.scheduler.backend
+        try:
+            if action == "install":
+                if info.schedule is None:
+                    raise ConfigError("this pipeline has no `schedule:` block")
+                backend.install(info.file, info.name, info.schedule)
+            elif action == "remove":
+                backend.remove(info.file, info.name)
+            else:
+                raise ConfigError(f"unknown action {action!r}")
+        except SchedulerError as exc:
+            raise ConfigError(str(exc)) from exc
+        self.scheduler.refresh()
 
     # -- running -----------------------------------------------------------
     def start_run(self, rel: str) -> str:
@@ -191,8 +281,13 @@ class UIServer(ThreadingHTTPServer):
         self.restrict_hosts = address[0] in LOOPBACK_HOSTS
 
 
-def create_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> UIServer:
-    return UIServer((host, port), UIState(root))
+def create_server(
+    root: Path,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    scheduler: SchedulerBackend | None = None,
+) -> UIServer:
+    return UIServer((host, port), UIState(root, scheduler=scheduler))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -258,7 +353,8 @@ class Handler(BaseHTTPRequestHandler):
         if not hmac.compare_digest(self.headers.get("X-OPR-Token", ""), self.state.token):
             self._json(HTTPStatus.FORBIDDEN, {"error": "invalid token"})
             return
-        if urlparse(self.path).path != "/api/run":
+        path = urlparse(self.path).path
+        if path not in ("/api/run", "/api/schedule"):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
         try:
@@ -267,6 +363,14 @@ class Handler(BaseHTTPRequestHandler):
             rel = str(body["file"])
         except (ValueError, KeyError, TypeError):
             self._json(HTTPStatus.BAD_REQUEST, {"error": 'expected JSON {"file": ...}'})
+            return
+        if path == "/api/schedule":
+            try:
+                self.state.change_schedule(rel, str(body.get("action", "")))
+            except ConfigError as exc:
+                self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+            else:
+                self._json(HTTPStatus.OK, {"ok": True})
             return
         try:
             run_id = self.state.start_run(rel)

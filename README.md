@@ -30,6 +30,32 @@ pipeline file, so scheduled runs also appear in the dashboard. Pass `--no-histor
 POST requests need a per-session token and the `Host` header is checked, so other web pages
 cannot trigger runs. Only expose it with `--host 0.0.0.0` on a network you trust.
 
+## Scheduling (Windows Task Scheduler)
+
+Declare when a pipeline should run, then register it with one command:
+
+```yaml
+schedule:
+  frequency: daily      # minutes | hourly | daily | weekly | startup
+  at: "07:30"           # HH:MM, quoted (daily/weekly)
+  # every: 2            # interval: every 2 days / 15 minutes / ...
+  # days: [MON, FRI]    # weekly only
+```
+
+```powershell
+opr schedule install pipeline.yaml            # create or update the task
+opr schedule install pipeline.yaml --dry-run  # print the task XML only
+opr schedule list                             # tasks with next / last run
+opr schedule remove pipeline.yaml
+```
+
+Tasks live under the `onprem-runner` folder of Task Scheduler and run
+`python -m onprem_runner run <pipeline>` with the interpreter that installed them, as the
+current user while logged on. Use `--system` (elevated shell) to run as SYSTEM without a
+logged-in user. The dashboard shows each pipeline's schedule and next run, and can
+install or remove the task with one click. Runs started by Task Scheduler are recorded in
+the dashboard history like any other.
+
 ## Pipeline file
 
 ```yaml
@@ -95,7 +121,7 @@ See `onprem_runner.steps.StepType` and `onprem_runner.notifiers.Notifier`.
 
 ## Roadmap
 
-Windows Task Scheduler integration (`opr schedule`) shown in the dashboard, `opr watch` (file / webhook triggers),
+`opr watch` (file / webhook triggers),
 Windows service wrapper, PowerShell / executable step types.
 
 ## License

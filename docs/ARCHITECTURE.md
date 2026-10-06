@@ -18,7 +18,7 @@ Pendiente: comprobar el nombre en GitHub antes de crear el repositorio.
 **MVP (v0.1):** ejecución bajo demanda por CLI, pipeline de pasos, configuración
 YAML validada, notificadores Email y File, logs estructurados.
 
-**v0.2+:** generación de tareas en Windows Task Scheduler, `watch` (archivo/webhook),
+**v0.2+:** `watch` (archivo/webhook),
 servicio de Windows, step types `powershell`/`exe`/`node`, API Python fluida.
 
 ## 3. Modelo de flujo

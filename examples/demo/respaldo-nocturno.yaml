@@ -2,3 +2,7 @@ name: Respaldo nocturno
 steps:
   - {id: respaldo, type: python, script: scripts/respaldo.py}
   - {id: verificar, type: shell, command: echo verificado, needs: [respaldo]}
+schedule:
+  frequency: weekly
+  days: [MON, WED, FRI]
+  at: "02:00"
