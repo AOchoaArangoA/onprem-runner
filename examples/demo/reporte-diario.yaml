@@ -1,0 +1,8 @@
+name: Reporte diario de ventas
+steps:
+  - {id: extraer, type: python, script: scripts/extraer.py}
+  - {id: validar, type: python, script: scripts/validar.py, needs: [extraer]}
+  - {id: consolidar, type: python, script: scripts/consolidar.py, needs: [validar]}
+  - {id: publicar, type: shell, command: echo publicado, needs: [consolidar]}
+notifiers:
+  - {type: file, path: 'out/{date}-reporte.json'}

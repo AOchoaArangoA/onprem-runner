@@ -10,6 +10,7 @@ from onprem_runner.config import execution_order, load_config
 from onprem_runner.errors import ConfigError
 from onprem_runner.logging_utils import setup_logging
 from onprem_runner.runner import Runner
+from onprem_runner.store import RunStore
 
 app = typer.Typer(help="Run local/on-premise automation pipelines.", no_args_is_help=True)
 
@@ -56,12 +57,21 @@ def run(
     log_file: Annotated[
         Path | None, typer.Option(help="Also write JSON logs to this file.")
     ] = None,
+    no_history: Annotated[
+        bool, typer.Option("--no-history", help="Do not record this run for the dashboard.")
+    ] = False,
 ) -> None:
     """Run a pipeline now. Exit code: 0 success, 1 run failed, 2 invalid config."""
     setup_logging(json_format=json_logs, log_file=log_file)
     try:
         config = load_config(pipeline)
-        runner = Runner(config, pipeline.resolve().parent)
+        base_dir = pipeline.resolve().parent
+        runner = Runner(
+            config,
+            base_dir,
+            store=None if no_history else RunStore(base_dir),
+            pipeline_file=pipeline.resolve(),
+        )
     except ConfigError as exc:
         raise _fail(str(exc)) from exc
     result = runner.run()
@@ -97,6 +107,43 @@ def init(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         typer.echo(f"created {path}")
+
+
+@app.command()
+def ui(
+    directory: Annotated[
+        Path, typer.Argument(help="Directory to scan for pipeline files.")
+    ] = Path(),
+    host: Annotated[
+        str, typer.Option(help="Interface to bind. Keep 127.0.0.1 unless you trust the network.")
+    ] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8765,
+    open_browser: Annotated[
+        bool, typer.Option("--open/--no-open", help="Open the browser.")
+    ] = True,
+) -> None:
+    """Start the local web dashboard (pipelines, live runs and history)."""
+    from onprem_runner.ui import create_server
+
+    setup_logging()
+    if not directory.is_dir():
+        raise _fail(f"{directory} is not a directory")
+    try:
+        server = create_server(directory, host, port)
+    except OSError as exc:
+        raise _fail(f"cannot listen on {host}:{port}: {exc}") from exc
+    url = f"http://{host}:{server.server_address[1]}/"
+    typer.secho(f"Dashboard: {url}  (Ctrl+C to stop)", fg=typer.colors.GREEN)
+    if open_browser:
+        import webbrowser
+
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        typer.echo("bye")
+    finally:
+        server.server_close()
 
 
 @app.command()

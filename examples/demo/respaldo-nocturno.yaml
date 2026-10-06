@@ -1,0 +1,4 @@
+name: Respaldo nocturno
+steps:
+  - {id: respaldo, type: python, script: scripts/respaldo.py}
+  - {id: verificar, type: shell, command: echo verificado, needs: [respaldo]}

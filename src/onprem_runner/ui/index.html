@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>onprem-runner</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --surface-2: #f0f2f5; --border: #e2e5ea;
+    --text: #1b1f27; --muted: #6a7280; --accent: #2f5bea;
+    --success: #1f9d55; --success-bg: #e3f6ea;
+    --failed: #d6372f; --failed-bg: #fde8e7;
+    --timeout: #b7791f; --timeout-bg: #fdf1d8;
+    --skipped: #7b8494; --skipped-bg: #eceef2;
+    --running: #2f5bea; --running-bg: #e4ebfe;
+    --pending: #a3aab8; --pending-bg: #f0f2f5;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1218; --surface: #171b23; --surface-2: #1f242e; --border: #2a303c;
+      --text: #e7eaf0; --muted: #8b94a5; --accent: #6b8cff;
+      --success: #3ecf7f; --success-bg: #12301f;
+      --failed: #ff6b63; --failed-bg: #3a1815;
+      --timeout: #f0b44c; --timeout-bg: #34270f;
+      --skipped: #98a1b3; --skipped-bg: #232834;
+      --running: #7b9aff; --running-bg: #182349;
+      --pending: #5d6577; --pending-bg: #1f242e;
+      --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1218; --surface: #171b23; --surface-2: #1f242e; --border: #2a303c;
+    --text: #e7eaf0; --muted: #8b94a5; --accent: #6b8cff;
+    --success: #3ecf7f; --success-bg: #12301f;
+    --failed: #ff6b63; --failed-bg: #3a1815;
+    --timeout: #f0b44c; --timeout-bg: #34270f;
+    --skipped: #98a1b3; --skipped-bg: #232834;
+    --running: #7b9aff; --running-bg: #182349;
+    --pending: #5d6577; --pending-bg: #1f242e;
+    --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 16px 48px; }
+  header { display: flex; align-items: center; gap: 12px; padding: 20px 0 16px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+  header .root { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+    background: var(--surface-2); padding: 3px 8px; border-radius: 6px; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  header .spacer { flex: 1; }
+  .live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+  .live.off .dot { background: var(--failed); }
+  button { font: inherit; cursor: pointer; }
+  .icon-btn { background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 4px 10px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; box-shadow: var(--shadow); }
+  .stat .label { color: var(--muted); font-size: 12px; }
+  .stat .value { font-size: 26px; font-weight: 650; letter-spacing: -.02em; margin-top: 2px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    margin: 28px 0 12px; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .card-head { display: flex; align-items: flex-start; gap: 10px; }
+  .card-head .title { flex: 1; min-width: 0; }
+  .card-head .name { font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+  .card-head .file { color: var(--muted); font: 12px ui-monospace, Consolas, monospace; overflow-wrap: anywhere; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; white-space: nowrap; }
+  .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .s-success { color: var(--success); background: var(--success-bg); }
+  .s-failed { color: var(--failed); background: var(--failed-bg); }
+  .s-timeout { color: var(--timeout); background: var(--timeout-bg); }
+  .s-skipped { color: var(--skipped); background: var(--skipped-bg); }
+  .s-running { color: var(--running); background: var(--running-bg); }
+  .s-pending, .s-none { color: var(--pending); background: var(--pending-bg); }
+  .s-running::before { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .chip { padding: 3px 9px; border-radius: 6px; font: 12px ui-monospace, Consolas, monospace;
+    border: 1px solid transparent; }
+  .arrow { color: var(--muted); font-size: 12px; }
+  .meta { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+  .spark { display: flex; gap: 3px; align-items: center; margin-left: auto; }
+  .spark i { width: 8px; height: 18px; border-radius: 2px; background: var(--pending-bg); display: block; }
+  .spark i.success { background: var(--success); } .spark i.failed { background: var(--failed); }
+  .spark i.timeout { background: var(--timeout); }
+  .card-foot { display: flex; align-items: center; gap: 10px; margin-top: auto; }
+  .run-btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 6px 14px; font-weight: 600; }
+  .run-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .error-box { background: var(--failed-bg); color: var(--failed); border-radius: 8px; padding: 8px 10px;
+    font: 12px ui-monospace, Consolas, monospace; white-space: pre-wrap; max-height: 120px; overflow: auto; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  select { font: inherit; background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 5px 8px; }
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    overflow-x: auto; box-shadow: var(--shadow); }
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-size: 12px; font-weight: 600; background: var(--surface-2); }
+  tbody tr { cursor: pointer; } tbody tr:hover { background: var(--surface-2); }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.mono { font: 12px ui-monospace, Consolas, monospace; color: var(--muted); }
+  .empty { padding: 36px 16px; text-align: center; color: var(--muted); }
+  .empty code { background: var(--surface-2); padding: 2px 6px; border-radius: 4px; }
+  dialog { border: 1px solid var(--border); border-radius: 14px; padding: 0; width: min(760px, 94vw);
+    max-height: 88vh; background: var(--surface); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  dialog::backdrop { background: rgba(10,12,18,.55); }
+  .dlg-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .dlg-head h3 { margin: 0; font-size: 16px; flex: 1; overflow-wrap: anywhere; }
+  .dlg-body { padding: 16px 20px 20px; overflow: auto; max-height: calc(88vh - 70px); }
+  .kv { display: flex; gap: 20px; flex-wrap: wrap; color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  .kv b { color: var(--text); font-weight: 600; }
+  .step { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+  .step summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; }
+  .step summary::-webkit-details-marker { display: none; }
+  .step summary .sid { font-weight: 600; flex: 1; overflow-wrap: anywhere; }
+  .step summary .sm { color: var(--muted); font-size: 12px; }
+  .out { margin: 0; padding: 10px 12px; background: var(--surface-2); border-top: 1px solid var(--border);
+    font: 12px/1.5 ui-monospace, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
+  .out .lbl { display: block; color: var(--muted); font-weight: 600; margin-bottom: 2px; }
+  .out.err .lbl { color: var(--failed); }
+  #toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 10; }
+  .toast { background: var(--text); color: var(--bg); padding: 9px 14px; border-radius: 8px; max-width: 360px; }
+  .toast.bad { background: var(--failed); color: #fff; }
+  @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>onprem-runner</h1>
+    <span class="root" id="root" title="Directorio del proyecto"></span>
+    <span class="spacer"></span>
+    <span class="live" id="live"><span class="dot"></span><span id="live-text">en vivo</span></span>
+    <button class="icon-btn" id="theme" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
+  </header>
+
+  <section class="stats" id="stats"></section>
+
+  <h2>Pipelines</h2>
+  <section class="grid" id="pipelines"></section>
+
+  <h2>Historial de ejecuciones</h2>
+  <div class="toolbar">
+    <select id="f-pipeline" aria-label="Filtrar por pipeline"><option value="">Todos los pipelines</option></select>
+    <select id="f-status" aria-label="Filtrar por estado">
+      <option value="">Todos los estados</option>
+      <option value="success">Exitosas</option>
+      <option value="failed">Fallidas</option>
+    </select>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Estado</th><th>Pipeline</th><th>Inicio</th><th>Duración</th><th>Pasos</th><th>Ejecución</th></tr></thead>
+      <tbody id="runs"></tbody>
+    </table>
+    <div class="empty" id="runs-empty" hidden>Aún no hay ejecuciones. Pulsa <b>Ejecutar</b> en un pipeline.</div>
+  </div>
+</div>
+
+<dialog id="detail">
+  <div class="dlg-head">
+    <h3 id="d-title"></h3><span id="d-badge"></span>
+    <button class="icon-btn" id="d-close" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="dlg-body" id="d-body"></div>
+</dialog>
+<div id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const STATUS_LABEL = { success: "Exitoso", failed: "Fallido", timeout: "Timeout", skipped: "Omitido",
+  running: "Ejecutando", pending: "Pendiente", none: "Sin ejecuciones" };
+let state = { pipelines: [], runs: [], active: [], root: "" };
+let timer = null, lastText = "", lastRender = 0;
+
+const $ = (s) => document.querySelector(s);
+function h(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") e.className = v;
+    else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null) e.append(c);
+  return e;
+}
+const badge = (s) => h("span", { class: "badge s-" + s, text: STATUS_LABEL[s] || s });
+const fmtDur = (s) => s == null ? "–" : s < 60 ? s.toFixed(1) + " s" : Math.floor(s / 60) + " m " + Math.round(s % 60) + " s";
+function fmtWhen(iso) {
+  const d = new Date(iso), diff = (Date.now() - d) / 1000;
+  if (diff < 60) return "hace un momento";
+  if (diff < 3600) return "hace " + Math.floor(diff / 60) + " min";
+  if (diff < 86400) return "hace " + Math.floor(diff / 3600) + " h";
+  return d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+function toast(msg, bad) {
+  const t = h("div", { class: "toast" + (bad ? " bad" : ""), text: msg });
+  $("#toasts").append(t); setTimeout(() => t.remove(), 4500);
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/state", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const text = await r.text();
+    $("#live").classList.remove("off"); $("#live-text").textContent = "en vivo";
+    // Re-render only on changes (or every 30 s to refresh relative times) so clicks are never lost.
+    if (text !== lastText || Date.now() - lastRender > 30000) {
+      lastText = text; lastRender = Date.now();
+      state = JSON.parse(text);
+      render();
+    }
+  } catch (e) {
+    $("#live").classList.add("off"); $("#live-text").textContent = "sin conexión";
+  }
+  clearTimeout(timer);
+  timer = setTimeout(refresh, state.active.length ? 1000 : 4000);
+}
+
+function render() {
+  $("#root").textContent = state.root;
+  renderStats(); renderPipelines(); renderRuns();
+}
+
+function renderStats() {
+  const day = state.runs.filter((r) => Date.now() - new Date(r.started_at) < 864e5);
+  const recent = state.runs.slice(0, 50);
+  const ok = recent.filter((r) => r.status === "success").length;
+  const rate = recent.length ? Math.round((ok / recent.length) * 100) + "%" : "–";
+  const stats = [
+    ["Pipelines", state.pipelines.length], ["Ejecuciones (24 h)", day.length],
+    ["Tasa de éxito", rate], ["En ejecución", state.active.length],
+  ];
+  $("#stats").replaceChildren(...stats.map(([l, v]) =>
+    h("div", { class: "stat" }, h("div", { class: "label", text: l }), h("div", { class: "value", text: String(v) }))));
+}
+
+function renderPipelines() {
+  const box = $("#pipelines");
+  if (!state.pipelines.length) {
+    box.replaceChildren(h("div", { class: "card empty" },
+      "No se encontraron pipelines. Crea uno con ", h("code", { text: "opr init" }), "."));
+    return;
+  }
+  box.replaceChildren(...state.pipelines.map((p) => {
+    const active = state.active.find((a) => a.file === p.file);
+    const runs = state.runs.filter((r) => r.file === p.file);
+    const last = runs[0];
+    const stepStatus = {};
+    if (active) Object.assign(stepStatus, active.steps);
+    else if (last) last.steps.forEach((s) => (stepStatus[s.id] = s.status));
+    const overall = active ? "running" : last ? last.status : "none";
+
+    const flow = h("div", { class: "flow" });
+    p.steps.forEach((s, i) => {
+      if (i) flow.append(h("span", { class: "arrow", text: "→" }));
+      const st = stepStatus[s.id] || "none";
+      flow.append(h("span", { class: "chip s-" + st, title: s.type + (s.needs.length ? " · necesita: " + s.needs.join(", ") : ""), text: s.id }));
+    });
+
+    const spark = h("div", { class: "spark", title: "Últimas 10 ejecuciones" },
+      ...runs.slice(0, 10).reverse().map((r) => h("i", { class: r.status })));
+    const when = active ? "iniciada " + fmtWhen(active.started_at)
+      : last ? fmtWhen(last.started_at) + " · " + fmtDur(last.duration) : "nunca ejecutado";
+
+    const btn = h("button", { class: "run-btn", disabled: !!(active || p.error), text: active ? "Ejecutando…" : "▶ Ejecutar",
+      onclick: () => runPipeline(p) });
+    return h("article", { class: "card" },
+      h("div", { class: "card-head" },
+        h("div", { class: "title" }, h("div", { class: "name", text: p.name }), h("div", { class: "file", text: p.file })),
+        badge(p.error ? "failed" : overall)),
+      p.error ? h("div", { class: "error-box", text: p.error }) : flow,
+      h("div", { class: "card-foot" }, btn, h("div", { class: "meta" }, when), spark));
+  }));
+}
+
+function renderRuns() {
+  const sel = $("#f-pipeline");
+  const wanted = sel.value;
+  const files = [...new Set(state.runs.map((r) => r.file).filter(Boolean))];
+  if (sel.options.length - 1 !== files.length) {
+    sel.replaceChildren(h("option", { value: "", text: "Todos los pipelines" }),
+      ...files.map((f) => h("option", { value: f, text: (state.pipelines.find((p) => p.file === f) || {}).name || f })));
+    sel.value = wanted;
+  }
+  const fStatus = $("#f-status").value;
+  const rows = state.runs.filter((r) => (!sel.value || r.file === sel.value) && (!fStatus || r.status === fStatus));
+  $("#runs-empty").hidden = rows.length > 0;
+  $("#runs").replaceChildren(...rows.map((r) => {
+    const ok = r.steps.filter((s) => s.status === "success").length;
+    return h("tr", { onclick: () => openDetail(r), tabindex: "0", onkeydown: (e) => e.key === "Enter" && openDetail(r) },
+      h("td", {}, badge(r.status)), h("td", { text: r.pipeline }),
+      h("td", { text: fmtWhen(r.started_at), title: new Date(r.started_at).toLocaleString() }),
+      h("td", { text: fmtDur(r.duration) }), h("td", { text: ok + " / " + r.steps.length }),
+      h("td", { class: "mono", text: r.run_id }));
+  }));
+}
+
+async function runPipeline(p) {
+  try {
+    const r = await fetch("/api/run", { method: "POST", headers: { "Content-Type": "application/json", "X-OPR-Token": TOKEN },
+      body: JSON.stringify({ file: p.file }) });
+    const data = await r.json();
+    if (!r.ok) return toast(data.error || "No se pudo iniciar", true);
+    toast("Ejecución iniciada: " + p.name);
+    refresh();
+  } catch (e) { toast("No se pudo contactar con el servidor", true); }
+}
+
+async function openDetail(run) {
+  const dlg = $("#detail");
+  $("#d-title").textContent = run.pipeline;
+  $("#d-badge").replaceChildren(badge(run.status));
+  $("#d-body").replaceChildren(h("div", { class: "empty", text: "Cargando…" }));
+  dlg.showModal();
+  const r = await fetch("/api/run?file=" + encodeURIComponent(run.file) + "&id=" + encodeURIComponent(run.run_id));
+  if (!r.ok) { $("#d-body").replaceChildren(h("div", { class: "empty", text: "No se encontró el detalle." })); return; }
+  const d = await r.json();
+  const kv = h("div", { class: "kv" },
+    ...[["Ejecución", d.run_id], ["Inicio", new Date(d.started_at).toLocaleString()], ["Duración", fmtDur(d.duration)]]
+      .map(([k, v]) => h("span", {}, k + ": ", h("b", { text: v }))));
+  const steps = d.steps.map((s) => {
+    const det = h("details", { class: "step", open: s.status === "failed" || s.status === "timeout" },
+      h("summary", {}, badge(s.status), h("span", { class: "sid", text: s.id }),
+        h("span", { class: "sm", text: s.type + " · " + fmtDur(s.duration) + (s.attempts > 1 ? " · " + s.attempts + " intentos" : "")
+          + (s.exit_code != null ? " · exit " + s.exit_code : "") })));
+    if (s.stdout && s.stdout.trim()) det.append(h("pre", { class: "out" }, h("span", { class: "lbl", text: "stdout" }), s.stdout));
+    if (s.stderr && s.stderr.trim()) det.append(h("pre", { class: "out err" }, h("span", { class: "lbl", text: "stderr" }), s.stderr));
+    if (!(s.stdout || "").trim() && !(s.stderr || "").trim()) det.append(h("pre", { class: "out", text: "(sin salida)" }));
+    return det;
+  });
+  $("#d-body").replaceChildren(kv, ...steps);
+}
+
+$("#d-close").onclick = () => $("#detail").close();
+$("#detail").addEventListener("click", (e) => { if (e.target === $("#detail")) $("#detail").close(); });
+$("#f-pipeline").onchange = $("#f-status").onchange = renderRuns;
+$("#theme").onclick = () => {
+  const cur = document.documentElement.dataset.theme
+    || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("opr-theme", next); } catch (e) {}
+};
+try { const t = localStorage.getItem("opr-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+refresh();
+</script>
+</body>
+</html>

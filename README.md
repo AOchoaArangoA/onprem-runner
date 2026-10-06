@@ -11,6 +11,25 @@ opr validate pipeline.yaml
 opr run pipeline.yaml
 ```
 
+## Dashboard
+
+```powershell
+opr ui                # scans the current directory for pipeline files
+opr ui C:utomations --port 9000
+```
+
+A local web UI (no extra dependencies, bound to `127.0.0.1` by default) that shows:
+
+- every pipeline found in the directory, with its steps and live status,
+- a **Run** button per pipeline (progress updates step by step),
+- the run history with per-step status, duration, `stdout` and `stderr`,
+- success rate and runs in the last 24 hours.
+
+Each `opr run` (from the CLI, Task Scheduler or the UI) is recorded in `.opr/runs/` next to the
+pipeline file, so scheduled runs also appear in the dashboard. Pass `--no-history` to skip it.
+POST requests need a per-session token and the `Host` header is checked, so other web pages
+cannot trigger runs. Only expose it with `--host 0.0.0.0` on a network you trust.
+
 ## Pipeline file
 
 ```yaml
@@ -76,7 +95,7 @@ See `onprem_runner.steps.StepType` and `onprem_runner.notifiers.Notifier`.
 
 ## Roadmap
 
-Windows Task Scheduler integration (`opr schedule`), `opr watch` (file / webhook triggers),
+Windows Task Scheduler integration (`opr schedule`) shown in the dashboard, `opr watch` (file / webhook triggers),
 Windows service wrapper, PowerShell / executable step types.
 
 ## License
