@@ -15,7 +15,7 @@ opr run pipeline.yaml
 
 ```powershell
 opr ui                # scans the current directory for pipeline files
-opr ui C:utomations --port 9000
+opr ui C:\automations --port 9000
 ```
 
 A local web UI (no extra dependencies, bound to `127.0.0.1` by default) that shows:
