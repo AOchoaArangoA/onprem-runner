@@ -25,17 +25,27 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False, default=str)
 
 
+class TextFormatter(logging.Formatter):
+    """Human-readable line followed by the structured fields as key=value."""
+
+    def __init__(self) -> None:
+        super().__init__("%(asctime)s %(levelname)-7s %(message)s")
+
+    def format(self, record: logging.LogRecord) -> str:
+        line = super().format(record)
+        data = getattr(record, "data", None)
+        if isinstance(data, dict):
+            line += " " + " ".join(f"{k}={v}" for k, v in data.items() if k != "run_id")
+        return line
+
+
 def setup_logging(*, json_format: bool = False, log_file: Path | None = None) -> None:
     logger = logging.getLogger(LOGGER_NAME)
     logger.handlers.clear()
     logger.setLevel(logging.INFO)
     logger.propagate = False
 
-    formatter: logging.Formatter = (
-        JsonFormatter()
-        if json_format
-        else logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-    )
+    formatter: logging.Formatter = JsonFormatter() if json_format else TextFormatter()
     handlers: list[logging.Handler] = [logging.StreamHandler()]
     if log_file is not None:
         log_file.parent.mkdir(parents=True, exist_ok=True)
