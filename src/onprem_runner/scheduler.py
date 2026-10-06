@@ -7,6 +7,7 @@ PowerShell's ``Get-ScheduledTask`` as JSON, because ``schtasks`` output is local
 
 from __future__ import annotations
 
+import getpass
 import hashlib
 import json
 import os
@@ -129,7 +130,17 @@ def build_task_xml(
 def _principal_xml(system: bool) -> str:
     if system:  # runs without a logged-in user; needs an elevated shell to register
         return "<UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel>"
-    return "<LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel>"
+    return (
+        f"<UserId>{escape(_current_user())}</UserId>"
+        "<LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel>"
+    )
+
+
+def _current_user() -> str:
+    """Account registering the task, as DOMAIN-qualified name (it will also run it)."""
+    user = os.environ.get("USERNAME") or getpass.getuser()
+    domain = os.environ.get("USERDOMAIN")
+    return f"{domain}\\{user}" if domain else user
 
 
 def _trigger_xml(schedule: ScheduleConfig, now: datetime) -> str:
