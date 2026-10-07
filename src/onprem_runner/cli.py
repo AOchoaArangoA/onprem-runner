@@ -209,6 +209,29 @@ def schedule_list() -> None:
 
 
 @app.command()
+def mcp(
+    directory: Annotated[
+        Path, typer.Argument(help="Directory to scan for pipeline files.")
+    ] = Path(),
+) -> None:
+    """Serve the pipelines to an AI agent (MCP over stdio), e.g. Claude Code.
+
+    Register it with:  claude mcp add onprem-runner -- opr mcp <directory>
+    """
+    from onprem_runner.control import ControlError
+
+    if not directory.is_dir():
+        raise _fail(f"{directory} is not a directory")
+    setup_logging()  # logs go to stderr; stdout belongs to the MCP protocol
+    try:
+        from onprem_runner.mcp_server import serve
+
+        serve(directory)
+    except ControlError as exc:
+        raise _fail(str(exc)) from exc
+
+
+@app.command()
 def version() -> None:
     """Print the installed version."""
     typer.echo(__version__)
