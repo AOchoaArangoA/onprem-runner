@@ -56,6 +56,39 @@ logged-in user. The dashboard shows each pipeline's schedule and next run, and c
 install or remove the task with one click. Runs started by Task Scheduler are recorded in
 the dashboard history like any other.
 
+## Control it from Claude Code (MCP)
+
+`opr mcp` exposes your pipelines to an AI agent as an MCP server (stdio):
+
+| Tool | What it does |
+|---|---|
+| `list_pipelines` | pipelines found, last run, schedule and next run |
+| `list_runs` | run history, filter by pipeline / status |
+| `get_run` | one run with each step's stdout / stderr (last 4000 chars) |
+| `run_pipeline` | start a pipeline; `wait_seconds` waits for the result |
+| `set_schedule` | install / remove its Windows scheduled task |
+
+```powershell
+pip install "onprem-runner[mcp]"
+claude mcp add onprem-runner -- opr mcp C:utomations
+```
+
+Use the full path to `opr.exe` if it is not on your `PATH`. Add `--scope project` to share the
+setup through a `.mcp.json` in the repository, or `--scope user` for all your projects.
+
+**From claude.ai/code (web or phone).** Cloud sessions run on Anthropic's infrastructure and cannot
+start local stdio servers. Instead, keep a session running on the Windows machine and drive it
+remotely with Remote Control (Pro/Max/Team/Enterprise, signed in with a claude.ai account):
+
+```powershell
+claude remote-control --name "On-prem automation"   # server mode, or
+claude --remote-control                             # interactive session
+```
+
+The session, the MCP server and every pipeline execute on that machine, so it must stay on and
+online. Only the pipelines under the directory you pass to `opr mcp` can be run. Exposing the
+server over a public tunnel is not recommended: it has no authentication of its own.
+
 ## Pipeline file
 
 ```yaml
