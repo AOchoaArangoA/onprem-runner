@@ -130,6 +130,8 @@ export const api = {
   deletePipeline: (name: string) => request<{ ok: boolean }>('DELETE', `/api/pipeline${file(name)}`),
   run: (name: string, only?: string[]) =>
     request<{ run_id: string }>('POST', `/api/pipeline/run${file(name)}`, only ? { only } : {}),
+  pauseSchedule: (name: string, paused: boolean) =>
+    request<{ ok: boolean }>('POST', `/api/pipeline/schedule${file(name)}`, { paused }),
   cancel: (runId: string) => request<{ ok: boolean }>('POST', `/api/runs/${runId}/cancel`),
   runs: (opts: { file?: string; status?: string; limit?: number; offset?: number } = {}) =>
     request<RunSummary[]>('GET', `/api/runs${queryString(opts)}`),

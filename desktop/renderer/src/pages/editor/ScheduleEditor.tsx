@@ -13,6 +13,7 @@ export function normalizeSchedule(schedule: Schedule): Schedule {
     at: frequency === 'daily' || frequency === 'weekly' ? (schedule.at ?? '08:00') : null,
     every: frequency === 'startup' ? 1 : Math.min(Math.max(1, schedule.every || 1), MAX_EVERY[frequency] ?? 1),
     days: frequency === 'weekly' ? (schedule.days.length ? schedule.days : ['MON']) : [],
+    catch_up: schedule.catch_up ?? true,
   };
 }
 
@@ -31,7 +32,7 @@ export function ScheduleEditor({
         checked={schedule !== null}
         label={t('schedule.enabled')}
         onChange={(on) =>
-          onChange(on ? normalizeSchedule({ frequency: 'daily', at: '08:00', every: 1, days: [] }) : null)
+          onChange(on ? normalizeSchedule({ frequency: 'daily', at: '08:00', every: 1, days: [], catch_up: true }) : null)
         }
       />
       {schedule && (
@@ -81,6 +82,16 @@ export function ScheduleEditor({
                 })}
               </div>
             </Field>
+          )}
+          {schedule.frequency !== 'startup' && (
+            <>
+              <Toggle
+                checked={schedule.catch_up}
+                label={t('schedule.catch_up')}
+                onChange={(value) => set({ catch_up: value })}
+              />
+              <p className="hint">{t('schedule.catch_up_hint')}</p>
+            </>
           )}
           <p className="hint">{t('schedule.note')}</p>
         </>

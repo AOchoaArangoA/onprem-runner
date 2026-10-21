@@ -242,10 +242,10 @@ def apply_graph(text: str, graph: dict[str, Any]) -> str:
 
 
 def _keep_schedule(key: str, value: Any) -> bool:
-    """Drop empty optional schedule fields (``days: []``, ``at: null``, ``every: 1``)."""
+    """Drop optional schedule fields that hold their default (``days: []``, ``every: 1``...)."""
     if value is None or value == []:
         return False
-    return not (key == "every" and value == 1)
+    return not ((key == "every" and value == 1) or (key == "catch_up" and value is True))
 
 
 # -- validation and saving ---------------------------------------------------------------

@@ -69,7 +69,8 @@
     "progress": "Run progress",
     "open": "Open",
     "delete_title": "Delete pipeline",
-    "delete_message": "“{{name}}” will be moved to the engine's trash folder. Its run history is kept."
+    "delete_message": "“{{name}}” will be moved to the engine's trash folder. Its run history is kept.",
+    "scheduled": "Scheduled"
   },
   "editor": {
     "back": "Back to pipelines",
@@ -191,7 +192,7 @@
     "every_daily": "Every (days)",
     "every_weekly": "Every (weeks)",
     "days": "Days",
-    "note": "The schedule is saved in the pipeline file. It will run automatically in the next release.",
+    "note": "Scheduled runs happen while OPR Studio is running; closing the window keeps it in the system tray.",
     "every_minute": "Every minute",
     "every_n_minutes": "Every {{n}} minutes",
     "every_hour": "Every hour",
@@ -200,7 +201,15 @@
     "every_n_days_at": "Every {{n}} days at {{at}}",
     "weekly_on": "Weekly on {{days}} at {{at}}",
     "every_n_weeks_on": "Every {{n}} weeks on {{days}} at {{at}}",
-    "at_startup": "At system startup"
+    "at_startup": "At system startup",
+    "next": "Next run",
+    "on_open": "Runs when the app opens",
+    "pause": "Pause",
+    "resume": "Resume",
+    "paused": "Schedule paused",
+    "catch_up": "Run once if a run was missed",
+    "catch_up_hint": "If the app was closed at the scheduled time, it runs once when it opens again.",
+    "skipped": "Scheduled run of {{file}} skipped: {{reason}}"
   },
   "weekday": {
     "MON": "Mon",

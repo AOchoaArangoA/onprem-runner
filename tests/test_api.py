@@ -457,3 +457,37 @@ def test_a_stale_lock_does_not_block_startup(tmp_path: Path) -> None:
     assert ready
     ready[0].request_shutdown()
     thread.join(timeout=20)
+
+
+# -- scheduling over HTTP ----------------------------------------------------------------------
+
+TIMED = (
+    "name: Timed\nsteps:\n  - {id: a, type: shell, command: echo x}\n"
+    "schedule: {frequency: daily, at: '07:30'}\n"
+)
+
+
+def test_pipelines_report_their_next_run_and_can_be_paused(server: ApiServer) -> None:
+    ws = Path(server.engine.workspace)
+    (ws / "timed.yaml").write_text(TIMED, encoding="utf-8")
+    server.engine.scheduler.refresh()
+    listing = {p["file"]: p for p in call(server, "GET", "/api/pipelines")[1]}
+    assert listing["timed.yaml"]["next_run"] is not None
+    assert listing["timed.yaml"]["paused"] is False
+    assert listing["demo.yaml"]["next_run"] is None  # no schedule
+
+    pause = "/api/pipeline/schedule?file=timed.yaml"
+    assert call(server, "POST", pause, {"paused": True})[0] == 200
+    listing = {p["file"]: p for p in call(server, "GET", "/api/pipelines")[1]}
+    assert listing["timed.yaml"]["paused"] is True
+    assert call(server, "POST", pause, {"paused": False})[0] == 200
+
+
+def test_pause_endpoint_validates_its_input(server: ApiServer) -> None:
+    demo = "/api/pipeline/schedule?file=demo.yaml"
+    assert call(server, "POST", demo, {"paused": "yes"})[0] == 400
+    assert call(server, "POST", demo, {})[0] == 400
+    assert (
+        call(server, "POST", "/api/pipeline/schedule?file=ghost.yaml", {"paused": True})[0] == 404
+    )
+    assert call(server, "POST", "/api/pipeline/schedule", {"paused": True})[0] == 400

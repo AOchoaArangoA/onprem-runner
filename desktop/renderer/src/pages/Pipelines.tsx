@@ -1,11 +1,11 @@
-import { AlertTriangle, Clock, KeyRound, Pencil, Play, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, Clock, KeyRound, Pause, Pencil, Play, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { PipelineSummary } from '../api/types';
 import { Link } from '../components/Link';
 import { ConfirmDialog, Empty, PromptDialog, StatusBadge } from '../components/ui';
-import { describeSchedule, formatDuration, relativeTime } from '../lib/format';
+import { describeSchedule, formatDuration, formatNextRun, relativeTime } from '../lib/format';
 import { navigate } from '../lib/router';
 import { errorMessage, useApp } from '../store/app';
 
@@ -45,6 +45,10 @@ export function PipelinesPage() {
         <Stat label={t('pipelines.runs_24h')} value={stats?.runs_24h ?? 0} />
         <Stat label={t('pipelines.success_rate')} value={rate === null || rate === undefined ? '–' : `${Math.round(rate * 100)}%`} />
         <Stat label={t('pipelines.running')} value={stats?.running ?? 0} />
+        <Stat
+          label={t('pipelines.scheduled')}
+          value={pipelines.filter((p) => p.next_run && !p.paused).length}
+        />
       </section>
 
       {pipelines.length === 0 ? (
@@ -159,6 +163,26 @@ function PipelineCard({
           </span>
         )}
       </div>
+      {pipeline.schedule && (
+        <div className="next-run">
+          {pipeline.paused ? (
+            <span className="badge s-timeout small">{t('schedule.paused')}</span>
+          ) : pipeline.next_run ? (
+            <span>
+              {t('schedule.next')}: <strong>{formatNextRun(pipeline.next_run, i18n.language)}</strong>
+            </span>
+          ) : (
+            <span className="muted">{t('schedule.on_open')}</span>
+          )}
+          <button
+            className="link"
+            onClick={() => void api.pauseSchedule(pipeline.file, !pipeline.paused).catch(onError)}
+          >
+            {pipeline.paused ? <Play size={12} /> : <Pause size={12} />}{' '}
+            {pipeline.paused ? t('schedule.resume') : t('schedule.pause')}
+          </button>
+        </div>
+      )}
 
       {running ? (
         <div className="progress" aria-label={t('pipelines.progress')}>

@@ -199,6 +199,7 @@ class Handler(BaseHTTPRequestHandler):
             ("DELETE", r"/api/pipeline", self._delete_pipeline),
             ("POST", r"/api/pipeline/validate", self._validate_pipeline),
             ("POST", r"/api/pipeline/run", self._run_pipeline),
+            ("POST", r"/api/pipeline/schedule", self._pause_schedule),
             ("GET", r"/api/runs", self._runs),
             ("GET", r"/api/runs/([^/]+)", self._run),
             ("POST", r"/api/runs/([^/]+)/cancel", self._cancel),
@@ -292,6 +293,13 @@ class Handler(BaseHTTPRequestHandler):
             raise BadRequest('"only" must be a list of step ids')
         run_id = self.engine.start_run(self._file(query), only=only, trigger="manual")
         self._json(HTTPStatus.ACCEPTED, {"run_id": run_id})
+
+    def _pause_schedule(self, query: dict[str, list[str]]) -> None:
+        paused = self._body().get("paused")
+        if not isinstance(paused, bool):
+            raise BadRequest('expected {"paused": true|false}')
+        self.engine.set_schedule_paused(self._file(query), paused)
+        self._json(HTTPStatus.OK, {"ok": True})
 
     def _runs(self, query: dict[str, list[str]]) -> None:
         runs = self.engine.list_runs(

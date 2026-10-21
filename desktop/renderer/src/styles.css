@@ -1431,3 +1431,20 @@ td .name {
     grid-column: 1 / -1;
   }
 }
+
+.next-run {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.next-run button.link {
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

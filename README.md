@@ -11,6 +11,25 @@ opr validate pipeline.yaml
 opr run pipeline.yaml
 ```
 
+## OPR Studio (desktop app)
+
+A portable Windows app to **design, run and monitor** pipelines visually. Copy
+`OPR-Studio-<version>-portable.exe` anywhere and run it: it keeps its database, settings and
+pipelines folder next to the `.exe` (or in `%APPDATA%\OPR Studio` if that place is read-only).
+
+- **Canvas**: drag to build the flow, connect steps with *on success / on failure / always* edges,
+  run all or one step, watch every node change state live. Parallel branches run at the same time.
+- **Logs**: every output line is stored in a local DuckDB database with its time, step and level
+  (JSON lines such as `{"level":"warn","msg":"..."}` keep their fields). Search, filter and export.
+- **Schedules**: `schedule:` blocks run while the app is open or in the system tray, with pause
+  and "run once if a run was missed".
+- **Secrets**: stored encrypted for your Windows user; use them as `${secret:NAME}`. They are
+  masked in every log.
+- **Your files stay yours**: pipelines are plain YAML (comments preserved when edited on the canvas),
+  so they work with git and with the `opr` command line too.
+
+Build it yourself, run its tests and read the design in [docs/DESKTOP.md](docs/DESKTOP.md).
+
 ## Dashboard
 
 ```powershell
@@ -154,8 +173,8 @@ See `onprem_runner.steps.StepType` and `onprem_runner.notifiers.Notifier`.
 
 ## Roadmap
 
-`opr watch` (file / webhook triggers),
-Windows service wrapper, PowerShell / executable step types.
+File/folder, webhook and chained triggers for OPR Studio, a Windows service wrapper,
+PowerShell / executable step types, a signed installer and auto-update.
 
 ## License
 

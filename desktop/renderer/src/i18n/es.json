@@ -70,7 +70,8 @@
     "progress": "Progreso de la ejecución",
     "open": "Abrir",
     "delete_title": "Eliminar pipeline",
-    "delete_message": "«{{name}}» se moverá a la papelera del motor. Su historial de ejecuciones se conserva."
+    "delete_message": "«{{name}}» se moverá a la papelera del motor. Su historial de ejecuciones se conserva.",
+    "scheduled": "Programados"
   },
   "editor": {
     "back": "Volver a pipelines",
@@ -192,7 +193,7 @@
     "every_daily": "Cada (días)",
     "every_weekly": "Cada (semanas)",
     "days": "Días",
-    "note": "La programación se guarda en el archivo del pipeline. Se ejecutará automáticamente en la próxima versión.",
+    "note": "Las ejecuciones programadas ocurren mientras OPR Studio está en marcha; al cerrar la ventana sigue en la bandeja del sistema.",
     "every_minute": "Cada minuto",
     "every_n_minutes": "Cada {{n}} minutos",
     "every_hour": "Cada hora",
@@ -201,7 +202,15 @@
     "every_n_days_at": "Cada {{n}} días a las {{at}}",
     "weekly_on": "Semanal: {{days}} a las {{at}}",
     "every_n_weeks_on": "Cada {{n}} semanas: {{days}} a las {{at}}",
-    "at_startup": "Al iniciar el sistema"
+    "at_startup": "Al iniciar el sistema",
+    "next": "Próxima ejecución",
+    "on_open": "Se ejecuta al abrir la aplicación",
+    "pause": "Pausar",
+    "resume": "Reanudar",
+    "paused": "Programación en pausa",
+    "catch_up": "Ejecutar una vez si se perdió una",
+    "catch_up_hint": "Si la aplicación estaba cerrada a la hora programada, se ejecuta una vez al volver a abrirla.",
+    "skipped": "Se omitió la ejecución programada de {{file}}: {{reason}}"
   },
   "weekday": {
     "MON": "Lun",

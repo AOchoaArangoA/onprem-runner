@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api, ApiError, hasToken, initToken } from '../api/client';
 import { connectEvents, type ConnectionState } from '../api/events';
+import i18n from '../i18n';
 import type {
   ActiveRun,
   EngineEvent,
@@ -190,6 +191,10 @@ export const useApp = create<AppState>((set, get) => {
         case 'secrets_changed':
           void get().refreshSecrets();
           refreshPipelinesSoon();
+          break;
+        case 'schedule_skipped':
+          if (event.reason !== 'missed')
+            get().toast('info', i18n.t('schedule.skipped', { file: event.file, reason: event.reason }));
           break;
         case 'resync':
           void get().refreshAll();

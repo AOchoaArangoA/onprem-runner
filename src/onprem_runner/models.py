@@ -82,6 +82,8 @@ class ScheduleConfig(BaseModel):
     at: str | None = None
     every: int = Field(default=1, ge=1)
     days: list[Weekday] = Field(default_factory=list)
+    # If the app was closed at the scheduled time, run once when it opens again.
+    catch_up: bool = True
 
     @field_validator("at", mode="before")
     @classmethod

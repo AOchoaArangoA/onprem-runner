@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { describeSchedule, formatBytes, formatClock, formatDuration, relativeTime, timelineBars } from './format';
+import {
+  describeSchedule,
+  formatBytes,
+  formatClock,
+  formatDuration,
+  formatNextRun,
+  relativeTime,
+  timelineBars,
+} from './format';
 
 describe('formatDuration', () => {
   it.each([
@@ -39,17 +47,17 @@ describe('relativeTime', () => {
 describe('describeSchedule', () => {
   const t = (key: string, o?: Record<string, unknown>) => `${key}${o ? JSON.stringify(o) : ''}`;
   it('picks the right wording', () => {
-    expect(describeSchedule({ frequency: 'daily', at: '08:30', every: 1, days: [] }, t)).toBe(
+    expect(describeSchedule({ frequency: 'daily', at: '08:30', every: 1, days: [], catch_up: true }, t)).toBe(
       'schedule.daily_at{"at":"08:30"}',
     );
-    expect(describeSchedule({ frequency: 'minutes', at: null, every: 15, days: [] }, t)).toBe(
+    expect(describeSchedule({ frequency: 'minutes', at: null, every: 15, days: [], catch_up: true }, t)).toBe(
       'schedule.every_n_minutes{"n":15}',
     );
-    expect(describeSchedule({ frequency: 'startup', at: null, every: 1, days: [] }, t)).toBe(
+    expect(describeSchedule({ frequency: 'startup', at: null, every: 1, days: [], catch_up: true }, t)).toBe(
       'schedule.at_startup',
     );
     expect(
-      describeSchedule({ frequency: 'weekly', at: '02:00', every: 1, days: ['MON', 'FRI'] }, t),
+      describeSchedule({ frequency: 'weekly', at: '02:00', every: 1, days: ['MON', 'FRI'], catch_up: true }, t),
     ).toBe('schedule.weekly_on{"days":"weekday.MON, weekday.FRI","at":"02:00"}');
   });
 });
@@ -80,5 +88,19 @@ describe('formatClock', () => {
     expect(formatClock('2026-10-05T22:21:38.252', true)).toBe('22:21:38.252');
     expect(formatClock('2026-10-05T07:05:09.004', true)).toBe('07:05:09.004');
     expect(formatClock('2026-10-05T22:21:38.252')).toBe('22:21:38');
+  });
+});
+
+describe('formatNextRun', () => {
+  const now = new Date('2026-10-05T12:00:00');
+  it('says today and tomorrow in the language of the user', () => {
+    expect(formatNextRun('2026-10-05T18:30:00', 'en', now)).toBe('today 18:30');
+    expect(formatNextRun('2026-10-06T07:30:00', 'en', now)).toBe('tomorrow 07:30');
+    expect(formatNextRun('2026-10-05T18:30:00', 'es', now)).toBe('hoy 18:30');
+    expect(formatNextRun('2026-10-06T07:30:00', 'es', now)).toBe('mañana 07:30');
+  });
+
+  it('shows weekday and date further ahead', () => {
+    expect(formatNextRun('2026-10-09T02:00:00', 'en', now)).toBe("Fri, Oct 9 02:00");
   });
 });

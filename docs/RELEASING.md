@@ -14,3 +14,13 @@ Cada versión:
 2. Crear un Release en GitHub con el tag `vX.Y.Z` (debe coincidir con `__version__`;
    el workflow falla si no).
 3. `publish.yml` construye y publica en PyPI automáticamente.
+
+## OPR Studio (portable .exe)
+
+`.github/workflows/desktop.yml` tests the app on every push that touches it. When a Release is
+published (or the workflow is run by hand) it also builds the engine with PyInstaller and the
+portable app with electron-builder, runs the packaged-app tests and attaches
+`OPR-Studio-<version>-portable.exe` to the Release. The version comes from `desktop/package.json`:
+keep it in step with `__version__` in `src/onprem_runner/__init__.py`.
+
+Locally: `python desktop/engine/build_engine.py` then `cd desktop && npm run dist`.

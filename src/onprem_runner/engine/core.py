@@ -19,12 +19,13 @@ from pathlib import Path
 from typing import Any
 
 from onprem_runner import interpreters
-from onprem_runner.config import load_config
+from onprem_runner.config import load_config, parse_config
 from onprem_runner.db import Database
+from onprem_runner.engine.scheduler import Scheduler
 from onprem_runner.errors import ConfigError
 from onprem_runner.logging_utils import LOGGER_NAME
 from onprem_runner.logs import LogLine
-from onprem_runner.models import StepResult
+from onprem_runner.models import ScheduleConfig, StepResult
 from onprem_runner.runner import Runner, new_run_id
 from onprem_runner.secrets_store import Cipher, SecretError, SecretStore, referenced_secrets
 from onprem_runner.settings import Settings, SettingsStore
@@ -163,19 +164,24 @@ class Engine:
         self._lock = threading.Lock()
         self._active: dict[str, ActiveRun] = {}
         self._closed = False
+        self.scheduler = Scheduler(self, data_dir / "scheduler.json")
 
     # -- lifecycle ---------------------------------------------------------------------------
-    def start(self) -> dict[str, int]:
-        """Housekeeping at startup: fail orphaned runs, import runs made while closed, purge."""
+    def start(self, *, scheduler: bool = True) -> dict[str, int]:
+        """Housekeeping at startup: fail orphaned runs, import runs made while closed, purge,
+        then start the scheduler (which also runs missed slots once)."""
         interrupted = self.db.mark_interrupted()
         ingested = sum(self.db.ingest_spool(d) for d in {p.parent for p in self._pipeline_files()})
         purged = self.db.purge(self.settings.retention_days)["runs"]
+        if scheduler:
+            self.scheduler.start()
         return {"interrupted": interrupted, "ingested": ingested, "purged": purged}
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
+        self.scheduler.stop()
         with self._lock:
             runs = list(self._active.values())
         for run in runs:
@@ -250,6 +256,7 @@ class Engine:
     def list_pipelines(self) -> list[dict[str, Any]]:
         with self._lock:
             active = {a.file: a.run_id for a in self._active.values()}
+        scheduled = self.scheduler.snapshot()
         result: list[dict[str, Any]] = []
         for path in self._pipeline_files():
             rel = self._rel(path)
@@ -262,6 +269,8 @@ class Engine:
                 "last_run": None,
                 "running_run_id": active.get(rel),
                 "secrets_missing": [],
+                "next_run": None,
+                "paused": False,
             }
             try:
                 graph = load_graph(path, self.workspace)
@@ -281,11 +290,43 @@ class Engine:
                     referenced_secrets([s["params"] for s in graph["steps"]] + graph["notifiers"])
                     - set(self._secret_names())
                 )
+            info = scheduled.get(rel)
+            if info is not None:
+                entry["next_run"] = info["next_run"]
+                entry["paused"] = info["paused"]
             runs = self.db.list_runs(pipeline_file=str(path), limit=1)
             if runs:
                 entry["last_run"] = self._public_run(runs[0])
             result.append(entry)
+        unplanned = [
+            e
+            for e in result
+            if e["schedule"] and e["next_run"] is None and e["file"] not in scheduled
+        ]
+        if unplanned:  # a file dropped into the folder: schedule it now, not at the next refresh
+            self.scheduler.refresh()
+            scheduled = self.scheduler.snapshot()
+            for entry in unplanned:
+                info = scheduled.get(entry["file"])
+                if info is not None:
+                    entry["next_run"], entry["paused"] = info["next_run"], info["paused"]
         return result
+
+    def scheduled_pipelines(self) -> list[tuple[str, str, ScheduleConfig]]:
+        """Every valid pipeline that has a ``schedule:`` block, as (file, name, schedule)."""
+        found: list[tuple[str, str, ScheduleConfig]] = []
+        for path in self._pipeline_files():
+            try:
+                config = parse_config(path.read_text(encoding="utf-8"), expand_env=False)
+            except (ConfigError, OSError):
+                continue
+            if config.schedule is not None:
+                found.append((self._rel(path), config.name, config.schedule))
+        return found
+
+    def set_schedule_paused(self, rel: str, paused: bool) -> None:
+        self.resolve(rel)  # must be a real pipeline of the workspace
+        self.scheduler.set_paused(rel, paused)
 
     def get_graph(self, rel: str) -> dict[str, Any]:
         path = self.resolve(rel)
@@ -325,6 +366,7 @@ class Engine:
         except (KeyError, TypeError, ValueError) as exc:
             raise BadRequest(f"malformed graph: {exc!r}") from exc
         self.bus.publish({"type": "pipelines_changed"})
+        self.scheduler.refresh()
         return {"etag": new_etag}
 
     def create_pipeline(self, name: str) -> dict[str, Any]:

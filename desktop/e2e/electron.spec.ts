@@ -60,7 +60,9 @@ test.describe('desktop shell', () => {
     l = await launch();
     await expect(l.page.getByText('Engine connected')).toBeVisible({ timeout: 40_000 });
     await expect(l.page.locator('.card', { hasText: 'Electron demo' })).toBeVisible();
-    expect(await l.page.evaluate(() => window.opr?.isElectron)).toBe(true);
+    expect(
+      await l.page.evaluate(() => (window as unknown as { opr?: { isElectron?: boolean } }).opr?.isElectron),
+    ).toBe(true);
     expect(await l.page.title()).toBe('OPR Studio');
 
     await l.page.getByRole('link', { name: 'Settings' }).click();

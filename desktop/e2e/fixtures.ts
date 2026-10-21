@@ -21,6 +21,8 @@ export interface Studio {
   api: <T = unknown>(method: string, route: string, body?: unknown) => Promise<T>;
   /** Open the app on the given hash route. */
   open: (hash?: string) => Promise<void>;
+  /** Stop the engine and start it again on the same data (new port); reload with `open`. */
+  restartEngine: () => Promise<void>;
 }
 
 const SCRIPTS: Record<string, string> = {
@@ -88,8 +90,9 @@ export const test = base.extend<{ studio: Studio }>({
     for (const [name, body] of Object.entries(SCRIPTS))
       fs.writeFileSync(path.join(workspace, 'scripts', name), body);
 
-    const { proc, port } = await startEngine(workspace, dataDir);
-    const url = `http://127.0.0.1:${port}`;
+    let engine = await startEngine(workspace, dataDir);
+    let { proc, port } = engine;
+    let url = `http://127.0.0.1:${port}`;
     const api = async <T>(method: string, route: string, body?: unknown): Promise<T> => {
       const response = await fetch(`${url}${route}`, {
         method,
@@ -103,8 +106,12 @@ export const test = base.extend<{ studio: Studio }>({
 
     const studio: Studio = {
       page,
-      url,
-      port,
+      get url() {
+        return url;
+      },
+      get port() {
+        return port;
+      },
       workspace,
       dataDir,
       writePipeline: (file, yaml) => {
@@ -118,6 +125,12 @@ export const test = base.extend<{ studio: Studio }>({
       open: async (hash = '#/pipelines') => {
         await page.goto(`${url}/?token=${TOKEN}${hash}`);
         await expect(page.getByText('Engine connected')).toBeVisible();
+      },
+      restartEngine: async () => {
+        await stopEngine(proc, port);
+        engine = await startEngine(workspace, dataDir);
+        ({ proc, port } = engine);
+        url = `http://127.0.0.1:${port}`;
       },
     };
     try {

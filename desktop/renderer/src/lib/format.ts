@@ -36,6 +36,20 @@ export function relativeTime(iso: string, locale: string, now = Date.now()): str
   return parseTime(iso).toLocaleDateString(locale, { dateStyle: 'medium' });
 }
 
+/** "today 07:30", "tomorrow 07:30" or "Thu, 8 Oct 07:30": when something will happen next. */
+export function formatNextRun(iso: string, locale: string, now = new Date()): string {
+  const date = parseTime(iso);
+  const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false });
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOfDay(date) - startOfDay(now)) / 86_400_000);
+  if (days >= -1 && days <= 1) {
+    const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+    return `${rtf.format(days, 'day')} ${time}`;
+  }
+  const day = date.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' });
+  return `${day} ${time}`;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ['KB', 'MB', 'GB', 'TB'];

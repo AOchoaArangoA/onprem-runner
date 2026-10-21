@@ -33,6 +33,7 @@ export interface Schedule {
   at: string | null;
   every: number;
   days: Weekday[];
+  catch_up: boolean;
 }
 
 export type Position = [number, number];
@@ -88,6 +89,8 @@ export interface PipelineSummary {
   last_run: RunSummary | null;
   running_run_id: string | null;
   secrets_missing: string[];
+  next_run: string | null;
+  paused: boolean;
 }
 
 export interface LogRow {
@@ -166,7 +169,9 @@ export type EngineEvent =
   | { type: 'run_finished'; run_id: string; file: string; status: RunStatus }
   | { type: 'pipelines_changed' }
   | { type: 'settings_changed' }
-  | { type: 'secrets_changed' };
+  | { type: 'secrets_changed' }
+  | { type: 'schedule_fired'; file: string; run_id: string; slot: string; kind: string }
+  | { type: 'schedule_skipped'; file: string; reason: string };
 
 export interface LogFilters {
   step?: string;

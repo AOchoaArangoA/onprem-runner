@@ -261,6 +261,86 @@ steps:
   });
 });
 
+test.describe('scheduling', () => {
+  const DAILY = `name: Nightly
+steps:
+  - {id: a, type: shell, command: echo night}
+schedule: {frequency: daily, at: "23:45"}
+`;
+
+  test('shows the next run and lets the user pause and resume it', async ({ studio }) => {
+    studio.writePipeline('nightly.yaml', DAILY);
+    await studio.open();
+    const card = studio.page.locator('.card', { hasText: 'Nightly' });
+    await expect(card).toContainText('Daily at 23:45');
+    await expect(card.locator('.next-run')).toContainText('Next run');
+    await expect(card.locator('.next-run')).toContainText('23:45');
+    await expect(studio.page.locator('.stat', { hasText: 'Scheduled' })).toContainText('1');
+
+    await card.getByRole('button', { name: 'Pause' }).click();
+    await expect(card.locator('.next-run')).toContainText('Schedule paused');
+    await expect(studio.page.locator('.stat', { hasText: 'Scheduled' })).toContainText('0');
+    await card.getByRole('button', { name: 'Resume' }).click();
+    await expect(card.locator('.next-run')).toContainText('Next run');
+  });
+
+  test('edits a schedule on the canvas and saves it to the YAML', async ({ studio }) => {
+    const { page } = studio;
+    studio.writePipeline('plain.yaml', 'name: Plain\nsteps:\n  - {id: a, type: shell, command: echo a}\n');
+    await studio.open('#/editor/plain.yaml');
+    await expect(node(page, 'a')).toBeVisible();
+    await page.getByText('Run on a schedule', { exact: true }).click();
+    await page.getByLabel('Repeat').selectOption('weekly');
+    await page.getByRole('button', { name: 'Fri', exact: true }).click();
+    await page.locator('input[type=time]').fill('06:15');
+    await page.getByText('Run once if a run was missed', { exact: true }).click();
+    await page.keyboard.press('Control+s');
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+
+    const yaml = studio.readPipeline('plain.yaml');
+    expect(yaml).toMatch(/frequency: weekly/);
+    expect(yaml).toMatch(/at: ["']?06:15/);
+    expect(yaml).toMatch(/MON/);
+    expect(yaml).toMatch(/FRI/);
+    expect(yaml).toMatch(/catch_up: false/);
+
+    await page.getByRole('link', { name: 'Pipelines' }).first().click();
+    await expect(page.locator('.card', { hasText: 'Plain' }).locator('.next-run')).toContainText('Next run');
+  });
+
+  test('a startup schedule runs by itself when the engine starts', async ({ studio }) => {
+    studio.writePipeline(
+      'boot.yaml',
+      'name: At startup\nsteps:\n  - {id: a, type: shell, command: echo booted}\nschedule: {frequency: startup}\n',
+    );
+    await studio.restartEngine(); // the scheduler fires startup pipelines once per start
+    await studio.open('#/runs');
+    const row = studio.page.locator('tbody tr', { hasText: 'At startup' });
+    await expect(row).toContainText('Schedule', { timeout: 20_000 });
+    await expect(row).toContainText('Succeeded');
+  });
+
+  test('a scheduled run that was missed while closed runs once when reopened', async ({ studio }) => {
+    studio.writePipeline(
+      'daily.yaml',
+      'name: Daily report\nsteps:\n  - {id: a, type: shell, command: echo report}\nschedule: {frequency: daily, at: "00:00"}\n',
+    );
+    await studio.open();
+    await expect(studio.page.locator('.card', { hasText: 'Daily report' })).toBeVisible();
+    // Pretend the last firing was three days ago, then "open the app again".
+    const state = `${studio.dataDir}/scheduler.json`;
+    const threeDaysAgo = new Date(Date.now() - 3 * 86_400_000);
+    const iso = new Date(threeDaysAgo.getTime() - threeDaysAgo.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+    await studio.restartEngine();
+    const fs = await import('node:fs');
+    fs.writeFileSync(state, JSON.stringify({ jobs: { 'daily.yaml': { last_fire: iso, paused: false } } }));
+    await studio.restartEngine();
+    await studio.open('#/runs');
+    await expect(studio.page.locator('tbody tr', { hasText: 'Daily report' })).toHaveCount(1, { timeout: 20_000 });
+    await expect(studio.page.locator('tbody tr', { hasText: 'Daily report' })).toContainText('Schedule');
+  });
+});
+
 test.describe('secrets', () => {
   test('stores a secret, injects it into a step and masks it in the logs', async ({ studio }) => {
     const { page } = studio;

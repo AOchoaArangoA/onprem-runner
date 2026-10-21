@@ -1,149 +1,130 @@
-# App de escritorio: diseño (v0.2)
+# OPR Studio: aplicación de escritorio
 
-Estado: **diseño aprobado en sus decisiones principales**, sin código todavía.
-Nombre de trabajo: **OPR Studio** (la CLI `opr` y el paquete `onprem-runner` se mantienen).
+Estado: **implementada** (Hitos 1 y 2 de las decisiones de abajo). Fecha: 2026-10-20.
+La CLI `opr` y el paquete `onprem-runner` se mantienen; OPR Studio es una interfaz y un motor
+de servicio construidos sobre el mismo núcleo.
 
-## 1. Decisiones tomadas
+## 1. Qué hay
+
+- **Lienzo interactivo** (React Flow): pasos como nodos, dependencias como conexiones con condición
+  (`si tiene éxito` / `si falla` / `siempre`), arrastrar para crear y conectar, panel de propiedades,
+  deshacer/rehacer, ordenar el diseño, estado en vivo de cada nodo y ejecución de un solo paso o
+  "desde aquí".
+- **Ejecución paralela** de ramas independientes (`max_parallel`, 4 por defecto) y cancelación.
+- **Logs línea a línea** en tiempo real y guardados en **DuckDB**, con filtros por paso, nivel, flujo
+  y texto, y exportación a TXT/CSV/JSONL. Una línea JSON con `level` y `msg` se guarda con nivel y
+  campos propios.
+- **Secretos** cifrados con DPAPI de Windows (`${secret:NOMBRE}`), con enmascarado en logs.
+- **Programación propia** (`schedule:`) que se ejecuta mientras la app está abierta o en la bandeja,
+  con pausa y con "una ejecución al volver" si se perdió alguna (`catch_up`).
+- **Bandeja del sistema**: cerrar la ventana no detiene nada; avisos de Windows al terminar una
+  ejecución con la ventana oculta; opción de arrancar con Windows.
+- **Interfaz en español e inglés**, tema claro/oscuro/sistema.
+- **Un único `.exe` portable** que guarda sus datos junto a sí mismo.
+
+## 2. Decisiones
 
 | Tema | Decisión |
 |---|---|
-| Envoltura de escritorio | **Electron** (Node 22 ya instalado; un solo `.exe` portable con `electron-builder`). Se puede migrar a Tauri después: la UI es web. |
-| UI | React + TypeScript + Vite; lienzo con **React Flow** (`@xyflow/react`); i18n **es / en** (i18next). |
-| Motor | El motor Python actual, ampliado y servido como proceso local (`opr serve`). |
-| Base de datos | **DuckDB**, un único archivo. **El motor es el único dueño**; nadie más lo abre. |
-| Definiciones de flujos | **Archivos YAML** (fuente de verdad). El lienzo los lee y los escribe. |
-| Ejecución | **Ramas independientes en paralelo** + **conexiones condicionales** (éxito / fallo / siempre). |
-| Logs | Línea a línea (stdout/stderr) + **logs estructurados**: si una línea es JSON con `level`/`msg`, se guardan sus campos. Retención configurable. |
-| Secretos | **Ambos**: `${NOMBRE}` (entorno) y `${secret:NOMBRE}` (almacén cifrado con DPAPI de Windows). |
-| Intérprete de scripts | **Ambos, externo por defecto**: `python:` por tarea o ajuste global (autodetección); opción `embedded`. |
-| Triggers v1 | **Manual + programación** (motor propio). Archivo, webhook y encadenado en v2, como plugins. |
-| Segundo plano | **Bandeja del sistema**: cerrar la ventana no detiene los triggers. |
-| Datos | Carpeta `data/` **junto al .exe**; si no es escribible, `%APPDATA%\OPR Studio`. |
-| Distribución | Uso interno, **sin firma digital**. Actualizar = reemplazar el .exe. |
+| Envoltura | **Electron** (un solo `.exe` portable con `electron-builder`). La UI es web: migrar a Tauri después solo cambia la envoltura. |
+| UI | React + TypeScript + Vite; lienzo con `@xyflow/react`; i18n con i18next (es / en). |
+| Motor | Python, servido como proceso local (`opr serve`) y empaquetado con PyInstaller. |
+| Base de datos | **DuckDB**, un archivo. **El motor es el único dueño**; la CLI y el MCP no la abren. |
+| Definiciones | **Archivos YAML** (fuente de verdad). El lienzo los lee y escribe conservando comentarios (`ruamel.yaml`). |
 | Estado final de una ejecución | **Fallida si cualquier paso falló** (salvo `ignore_failure: true`). Un paso omitido no cuenta como fallo. |
-| Ejecuciones perdidas | Al volver, **una sola ejecución** si se perdió alguna (configurable por flujo). |
-| Paralelismo | **4** pasos a la vez por defecto (`max_parallel` por flujo). |
-| Hitos | **H1**: lienzo + ejecución + logs en BD. **H2**: triggers, bandeja, .exe portable final. |
+| Ejecuciones perdidas | Al volver, **una sola** (la más reciente) si se perdió alguna; se desactiva con `catch_up: false`. |
+| Paralelismo | 4 pasos a la vez por defecto. |
+| Intérprete de scripts | **Externo por defecto** (`python:` por paso o ajuste global, con autodetección) y opción `embedded`. |
+| Triggers v1 | **Manual + programación.** Archivo, webhook y encadenado quedan para la versión 2, como plugins. |
+| Datos | Carpeta `data/` **junto al .exe**; si no es escribible, `%APPDATA%\OPR Studio`. |
+| Distribución | Uso interno, **sin firma digital**. Actualizar = reemplazar el `.exe`. |
 
-## 2. Arquitectura
-
-```
-┌─────────────── OPR Studio.exe (Electron, portable) ───────────────┐
-│  main process ── bandeja, ventana, ciclo de vida del motor        │
-│  renderer (React) ──HTTP + SSE (token)──┐                         │
-└─────────────────────────────────────────┼─────────────────────────┘
-                                          ▼
-                    opr-engine.exe  (Python, PyInstaller)  127.0.0.1:<puerto aleatorio>
-                    ├─ API local + eventos en vivo (SSE)
-                    ├─ Planificador DAG (paralelo, condiciones)
-                    ├─ Triggers: manual, schedule  (v2: file, webhook, chain)
-                    ├─ Escritor único de DuckDB (cola + inserción por lotes)
-                    └─ Secretos (DPAPI), enmascarado en logs
-```
-
-- **Electron arranca el motor** como proceso hijo, en un puerto libre de loopback, con un token de
-  sesión aleatorio. La API rechaza peticiones sin token y con `Host` ajeno (igual que el panel actual).
-- **`opr run` y el MCP desde fuera**: si el motor está abierto, le piden la ejecución por la API local
-  (descubierto mediante un archivo de bloqueo en `data/`). Si no está abierto, `opr run` funciona como
-  hoy y deja el resultado en `.opr/runs/*.json`; el motor lo **ingesta en DuckDB** al arrancar.
-  Así se respeta que DuckDB solo admite un proceso escritor.
-- **Escrituras a DuckDB**: un único hilo escritor con cola; las líneas de log se insertan por lotes
-  (cada ~250 ms o 500 filas), porque DuckDB rinde mal con inserciones fila a fila.
-
-## 3. Base de datos (DuckDB)
+## 3. Arquitectura
 
 ```
-schema_version(version)
-runs(run_id PK, pipeline_file, pipeline_name, status, trigger, started_at, finished_at, duration_s)
-step_runs(run_id, step_id, type, status, exit_code, attempts, started_at, finished_at, duration_s)
-log_lines(run_id, step_id, seq, ts, stream, level, message, fields JSON)
+┌────────────── OPR Studio (Electron, portable) ──────────────┐
+│ main: ventana, bandeja, avisos, ciclo de vida del motor     │
+│ renderer (React) ──HTTP + SSE, token de sesión──┐           │
+└─────────────────────────────────────────────────┼───────────┘
+                                                   ▼
+                         opr-engine (Python)  127.0.0.1:<puerto>
+                         ├─ API local (token, Host y Origin comprobados)
+                         ├─ Planificador DAG: paralelo, condiciones, cancelación
+                         ├─ Planificador de horarios (schedule)
+                         ├─ Escritor único de DuckDB (cola + inserción por lotes)
+                         └─ Secretos (DPAPI), enmascarado en logs
 ```
-- `trigger` = `manual | schedule | cli | mcp | …`.
-- `log_lines.level` y `fields` salen de las líneas JSON estructuradas; en texto plano `level` es `NULL`.
-- Retención: borrado por días (90 por defecto) y tope de líneas por ejecución; ambos ajustables.
-- Migraciones numeradas desde el primer día (`schema_version`).
 
-## 4. Cambios al formato YAML
+- Electron arranca el motor como proceso hijo en un puerto libre de loopback, con un token aleatorio
+  de sesión que pasa por entorno; la API rechaza peticiones sin token, con `Host` ajeno o con
+  `Origin` de otro sitio. Si el motor muere, Electron lo reinicia (hasta 3 veces).
+- El motor escribe `data/engine.lock` (puerto y token) y rechaza un segundo motor en la misma carpeta.
+- Los logs se insertan por lotes como literales SQL escapados: el enlace de parámetros de DuckDB
+  cuesta ~1,5 ms por parámetro y hacía 200 veces más lento el volcado.
+- Las ejecuciones de `opr run` hechas con la app cerrada se guardan en `.opr/runs/*.json` y el
+  motor las **ingesta** en DuckDB al arrancar.
+
+## 4. Formato YAML
 
 ```yaml
 name: reporte
-max_parallel: 4            # límite de concurrencia (por defecto 4)
+max_parallel: 4
 steps:
   - {id: extraer, type: python, script: extraer.py}
   - {id: validar, type: python, script: validar.py, needs: [extraer]}
-  - {id: alerta,  type: python, script: alerta.py,
-     needs: [{step: validar, when: failure}]}      # solo si validar falla
+  - {id: alerta, type: python, script: alerta.py,
+     needs: [{step: validar, when: failure}]}          # solo si validar falla
   - {id: publicar, type: shell, command: echo ok,
      needs: [{step: validar, when: success}]}
-schedule: {frequency: daily, at: "07:30"}
+schedule: {frequency: daily, at: "07:30"}               # catch_up: false para no recuperar
 ui:
-  positions: {extraer: [0, 0], validar: [260, 0]}  # posiciones de los nodos en el lienzo
+  positions: {extraer: [0, 0], validar: [300, 0]}       # posiciones de los nodos
 ```
-- `needs` acepta el formato actual (`[a, b]`, equivale a `when: success`) y el objeto con `when`.
-- Un paso se ejecuta cuando **todas** sus dependencias terminaron y **cada** condición se cumple;
-  si alguna no se cumple, queda `skipped`.
-- Los YAML actuales siguen funcionando sin cambios.
 
-## 5. Lienzo (React Flow)
+Un paso se ejecuta cuando **todas** sus dependencias terminaron y **cada** condición se cumple; si no,
+queda `skipped`. Con `fail_fast`, tras un fallo solo corren los pasos de recuperación o limpieza
+(con una arista `failure` o `always`). Los YAML anteriores siguen funcionando.
 
-- Nodos = pasos; aristas = dependencias (color según éxito / fallo / siempre).
-- Interacciones: arrastrar para crear y conectar, editar parámetros en un panel lateral,
-  **ejecutar todo / ejecutar solo este nodo**, estado en vivo (pendiente, ejecutando, éxito, fallo,
-  omitido) y deshacer/rehacer.
-- Guardado del YAML: atómico (archivo temporal + reemplazo) y con `ruamel.yaml` para **conservar
-  comentarios y orden** de lo que el usuario haya escrito a mano; PyYAML los perdería.
-- Visor de logs: filtro por nivel / paso / texto, seguimiento en vivo, exportar a TXT/CSV/JSON.
+Alineación de horarios (determinista, un reinicio no cambia el ritmo): `minutes`/`hourly` cuentan
+desde la medianoche local; `daily` y `weekly` usan días y semanas (empiezan en lunes) múltiplos de
+`every`; `startup` se ejecuta una vez cada vez que arranca el motor.
 
-## 6. Secretos
+## 5. Base de datos
 
-- Almacén `data/secrets.dat`: nombres en claro, valores cifrados con **DPAPI** (`CryptProtectData`, vía
-  `ctypes`, sin dependencias). Solo el mismo usuario de Windows en el mismo equipo puede descifrarlos.
-- La UI **nunca recibe** el valor, solo si existe; se guardan, se reemplazan y se eliminan.
-- Se resuelven al iniciar cada paso, solo hacia su entorno de proceso.
-- **Enmascarado**: cualquier aparición del valor en stdout/stderr se sustituye por `***` antes de
-  guardarse en la BD o mostrarse.
-- Limitación asumida: los secretos **no viajan** a otro PC (hay que volver a introducirlos).
+```
+runs(run_id PK, pipeline_file, pipeline_name, status, trigger, started_at, finished_at, duration_s)
+step_runs(run_id, step_id, type, status, exit_code, attempts, ignored, started_at, finished_at, duration_s)
+log_lines(run_id, step_id, seq, ts, stream, level, message, fields JSON)
+```
 
-## 7. Intérprete de scripts
+Migraciones numeradas (`schema_version`), retención en días (90 por defecto) y tope de líneas por
+ejecución (200.000), ambos configurables en Ajustes.
 
-- Orden de resolución: `python:` del paso → ajuste global del proyecto → autodetección
-  (lanzador `py`, `PATH`, `.venv` del proyecto).
-- `python: embedded` ejecuta el script con el intérprete incluido en `opr-engine.exe`
-  (solo biblioteca estándar y lo que se empaquete).
+## 6. Construir y probar
 
-## 8. Empaquetado
+```powershell
+pip install -e ".[dev]"            # motor y pruebas
+cd desktop; npm ci                 # interfaz y Electron
+npm run build                      # interfaz + proceso principal
+npm start                          # arrancar en desarrollo (usa .venv\Scripts\opr.exe)
 
-- `opr-engine.exe` con PyInstaller; app con `electron-builder` (target `portable`), incluyendo el
-  motor como recurso. Tamaño esperado: 150–250 MB (Electron + Python + DuckDB).
-- El `.exe` portable se **autoextrae en una carpeta temporal en cada arranque** (unos segundos).
-- Sin firma: SmartScreen y algunos antivirus pueden avisar la primera vez.
-- Requisitos: Windows 10/11 de 64 bits.
+npm test                           # pruebas unitarias de la interfaz
+npx playwright test -c e2e/playwright.config.ts     # end-to-end (Chrome instalado)
 
-## 9. Hitos y tareas
+python engine/build_engine.py      # motor -> engine-dist/opr-engine/opr-engine.exe
+npm run dist                       # -> release/OPR-Studio-<versión>-portable.exe
+```
 
-**H1: Lienzo + ejecución + logs en BD** (primer .exe probable)
-1. Motor: `needs` condicionales, ejecución paralela, `max_parallel`, `ignore_failure`.
-2. Captura de logs línea a línea con tiempo real y parseo de JSON estructurado.
-3. Capa DuckDB: esquema, migraciones, hilo escritor, ingesta de `.opr/runs`, retención.
-4. Secretos con DPAPI y enmascarado.
-5. `opr serve`: API local con token + eventos en vivo (SSE) + resolución de intérprete.
-6. Electron + React: lienzo editable, panel de parámetros, ejecución en vivo, visor de logs, i18n es/en.
-7. Empaquetado y prueba del `.exe`.
+El `.exe` portable pesa ~116 MB y se **autoextrae en una carpeta temporal en cada arranque** (unos
+10-15 s hasta tener el motor listo). Sin firma digital, SmartScreen o algún antivirus pueden avisar
+la primera vez.
 
-**H2: Triggers y segundo plano**
-1. Planificador propio (misma sintaxis `schedule:`), política de ejecuciones perdidas.
-2. Bandeja, cerrar a bandeja, arranque con Windows (opcional), notificaciones de Windows.
-3. Interfaz de triggers y estado de próxima ejecución.
-4. `.exe` portable final y documentación.
+## 7. Limitaciones conocidas
 
-**H3 (versión 2)**: triggers de archivo/carpeta, webhook local y encadenado.
-
-## 10. Riesgos
-
-| Riesgo | Mitigación |
-|---|---|
-| Arranque lento del portable (autoextracción) | Medir pronto; si molesta, ofrecer también zip sin autoextraer |
-| DuckDB + escritura de logs a alto volumen | Inserción por lotes, un solo escritor; pruebas de carga en H1 |
-| Falsos positivos de antivirus con PyInstaller | Documentarlo; usar `onedir` y evitar UPX |
-| Intérprete `embedded` limitado | Dejarlo como opción secundaria y avisarlo en la UI |
-| Secretos atados al usuario y equipo | Avisar en la UI; no prometer portabilidad de secretos |
+- Los **secretos no viajan** a otro equipo ni a otro usuario de Windows: DPAPI los ata a ambos.
+- El intérprete `embedded` solo conoce la biblioteca estándar; para scripts con librerías propias hay
+  que apuntar a un Python o `venv` externo.
+- Las programaciones propias solo se ejecutan con la app abierta o en la bandeja; para ejecutar sin
+  la app existe `opr schedule` (Windows Task Scheduler).
+- Las notificaciones por correo y archivo se editan en el YAML (el lienzo las muestra pero no las edita).
+- Triggers de archivo/carpeta, webhook y encadenado: versión 2.
