@@ -5,3 +5,4 @@ release/
 *.log
 e2e-results/
 playwright-report/
+.dev-data/
