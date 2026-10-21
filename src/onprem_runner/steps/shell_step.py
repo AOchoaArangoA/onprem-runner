@@ -27,9 +27,12 @@ class ShellStep(StepType):
 
     def execute(self, ctx: StepContext, timeout: float | None) -> ProcessOutcome:
         cwd = self.resolve(self.params.cwd) if self.params.cwd else self.base_dir
-        env = {"ONPREM_RUN_ID": ctx.run_id, **self.params.env}
+        env = {
+            "ONPREM_RUN_ID": ctx.run_id,
+            **{key: ctx.expand_text(value) for key, value in self.params.env.items()},
+        }
         return run_process(
-            self.params.command,
+            ctx.expand_text(self.params.command),
             cwd=cwd,
             env=env,
             timeout=timeout,

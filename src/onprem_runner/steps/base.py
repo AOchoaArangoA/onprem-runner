@@ -29,6 +29,10 @@ class StepContext:
     base_dir: Path
     step_id: str = ""
     on_line: LineCallback | None = None  # receives every output line as it is produced
+    expand: Callable[[str], str] | None = None  # resolves ${secret:NAME} at run time
+
+    def expand_text(self, text: str) -> str:
+        return self.expand(text) if self.expand is not None else text
 
 
 @dataclass

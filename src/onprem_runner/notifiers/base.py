@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
 
@@ -19,6 +20,8 @@ class Notifier(ABC):
     def __init__(self, config: NotifierConfig, base_dir: Path) -> None:
         self.config = config
         self.base_dir = base_dir
+        # Set by the runner so notifier parameters can use ${secret:NAME}.
+        self.expand: Callable[[str], str] = lambda text: text
         try:
             self.params = self.params_model(**config.params)
         except ValidationError as exc:

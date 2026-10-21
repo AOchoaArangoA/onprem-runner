@@ -46,5 +46,5 @@ class EmailNotifier(Notifier):
             if p.security == "starttls":
                 server.starttls()
             if p.username and p.password:
-                server.login(p.username, p.password)
+                server.login(self.expand(p.username), self.expand(p.password))
             server.send_message(message)

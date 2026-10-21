@@ -36,10 +36,10 @@ class PythonStep(StepType):
             "PYTHONIOENCODING": "utf-8",
             "PYTHONUNBUFFERED": "1",  # lines reach the log as they are printed
             "ONPREM_RUN_ID": ctx.run_id,
-            **self.params.env,
+            **{key: ctx.expand_text(value) for key, value in self.params.env.items()},
         }
         return run_process(
-            [interpreter, str(script), *self.params.args],
+            [interpreter, str(script), *(ctx.expand_text(a) for a in self.params.args)],
             cwd=cwd,
             env=env,
             timeout=timeout,

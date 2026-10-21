@@ -17,6 +17,7 @@ from onprem_runner.logs import LogLine, parse_line
 from onprem_runner.models import PipelineConfig, RunResult, StepConfig, StepResult
 from onprem_runner.notifiers import Notifier
 from onprem_runner.registry import get_notifier_type, get_step_type
+from onprem_runner.secrets_store import REFERENCE, SecretError, SecretStore
 from onprem_runner.steps import StepContext, StepType
 from onprem_runner.store import RunStore
 
@@ -72,6 +73,7 @@ class Runner:
         on_log: LogCallback | None = None,
         redact: Redactor | None = None,
         recorder: RunRecorder | None = None,
+        secrets: SecretStore | None = None,
     ) -> None:
         self.config = config
         self.base_dir = base_dir
@@ -81,6 +83,8 @@ class Runner:
         self.on_log = on_log
         self.redact = redact
         self.recorder = recorder
+        self.secrets = secrets
+        self._redact: Redactor | None = redact
         self._seq = 0
         self._seq_lock = threading.Lock()
         self._steps: list[tuple[StepConfig, StepType]] = [
@@ -93,7 +97,8 @@ class Runner:
 
     def run(self, run_id: str | None = None, trigger: str = "cli") -> RunResult:
         run_id = run_id or new_run_id()
-        ctx = StepContext(run_id=run_id, base_dir=self.base_dir)
+        self._redact = self.redact or (self.secrets.redactor() if self.secrets else None)
+        ctx = StepContext(run_id=run_id, base_dir=self.base_dir, expand=self._expand)
         self._seq = 0
         started = datetime.now()
         log.info("run started", extra={"data": {"run_id": run_id, "pipeline": self.config.name}})
@@ -213,8 +218,8 @@ class Runner:
             return None
 
         def sink(stream: str, text: str) -> None:
-            if self.redact is not None:
-                text = self.redact(text)
+            if self._redact is not None:
+                text = self._redact(text)
             level, message, fields = parse_line(text)
             with self._seq_lock:
                 self._seq += 1
@@ -260,7 +265,7 @@ class Runner:
                     result.status = "success" if outcome.exit_code == 0 else "failed"
             except Exception as exc:  # a plugin bug must not abort the whole run
                 result.status, result.exit_code = "failed", None
-                result.stderr = f"{type(exc).__name__}: {exc}"
+                result.stderr = self._clean(f"{type(exc).__name__}: {exc}")
             result.duration = time.monotonic() - start
             log.info(
                 "step finished",
@@ -283,10 +288,18 @@ class Runner:
         return result
 
     def _clean(self, text: str) -> str:
-        return self.redact(text) if self.redact is not None else text
+        return self._redact(text) if self._redact is not None else text
+
+    def _expand(self, text: str) -> str:
+        if self.secrets is not None:
+            return self.secrets.expand(text)
+        if REFERENCE.search(text):
+            raise SecretError("this run has no secret store, so ${secret:...} cannot be resolved")
+        return text
 
     def _notify(self, run_result: RunResult) -> None:
         for notifier in self._notifiers:
+            notifier.expand = self._expand
             if not notifier.should_notify(run_result):
                 continue
             try:
