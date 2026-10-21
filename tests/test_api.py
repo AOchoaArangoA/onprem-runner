@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import threading
@@ -165,7 +166,8 @@ def test_cross_origin_writes_are_refused_but_same_origin_is_fine(server: ApiServ
 def test_oversized_and_malformed_bodies_are_rejected(server: ApiServer) -> None:
     assert call(server, "POST", "/api/pipelines", raw=b"{not json")[0] == 400
     assert call(server, "POST", "/api/pipelines", raw=b"[1, 2]")[0] == 400
-    assert call(server, "POST", "/api/pipelines", raw=b"x" * 3_000_000)[0] == 400
+    with contextlib.suppress(OSError):  # the server may close before 3 MB are sent
+        assert call(server, "POST", "/api/pipelines", raw=b"x" * 3_000_000)[0] == 400
 
 
 def test_unknown_routes_return_json_404(server: ApiServer) -> None:

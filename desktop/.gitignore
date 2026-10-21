@@ -1,0 +1,7 @@
+node_modules/
+renderer/dist/
+main/dist/
+release/
+*.log
+e2e-results/
+playwright-report/

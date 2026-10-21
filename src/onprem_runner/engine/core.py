@@ -418,6 +418,7 @@ class Engine:
                 log.exception("run %s crashed", run_id)
                 self.db.fail_run(run_id)
             finally:
+                self.db.flush()  # clients react to run_finished by reading the stored logs
                 with self._lock:
                     self._active.pop(run_id, None)
                 self.bus.publish(

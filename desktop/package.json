@@ -1,0 +1,39 @@
+{
+  "name": "opr-studio",
+  "version": "0.1.0",
+  "description": "OPR Studio: visual orchestration of local automation pipelines",
+  "private": true,
+  "main": "main/dist/main.js",
+  "author": "AOchoaArangoA",
+  "license": "MIT",
+  "scripts": {
+    "dev:renderer": "vite --config renderer/vite.config.mts",
+    "build:renderer": "vite build --config renderer/vite.config.mts",
+    "build:main": "tsc -p main/tsconfig.json",
+    "build": "npm run build:renderer && npm run build:main",
+    "typecheck": "tsc -p renderer/tsconfig.json --noEmit && tsc -p main/tsconfig.json --noEmit",
+    "test": "vitest run --config renderer/vitest.config.mts",
+    "start": "npm run build && electron ."
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.12.0",
+    "i18next": "^26.5.3",
+    "lucide-react": "^1.60.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-i18next": "^17.1.0",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.9.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}
