@@ -36,17 +36,31 @@ def _expand_env(value: Any, strict: bool) -> Any:
 def load_config(path: Path, *, strict_env: bool = True) -> PipelineConfig:
     """Load and validate a pipeline YAML, expanding ``${VAR}`` references."""
     try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise ConfigError(f"cannot read {path}: {exc}") from exc
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"invalid YAML in {path}: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise ConfigError(f"{path} must contain a mapping at the top level")
+    return parse_config(text, source=str(path), strict_env=strict_env)
+
+
+def parse_config(
+    text: str, *, source: str = "pipeline", strict_env: bool = True, expand_env: bool = True
+) -> PipelineConfig:
+    """Validate pipeline YAML held in memory (used by the visual editor before saving).
+
+    ``expand_env=False`` keeps ``${VAR}`` references as written, which an editor needs so it
+    never writes expanded values back to the file.
+    """
     try:
-        config = PipelineConfig.model_validate(_expand_env(raw, strict_env))
+        raw = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"invalid YAML in {source}: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{source} must contain a mapping at the top level")
+    try:
+        data = _expand_env(raw, strict_env) if expand_env else raw
+        config = PipelineConfig.model_validate(data)
     except ValidationError as exc:
-        raise ConfigError(f"invalid pipeline {path}:\n{exc}") from exc
+        raise ConfigError(f"invalid pipeline {source}:\n{exc}") from exc
     execution_order(config.steps)  # validates ids and dependency graph
     return config
 
