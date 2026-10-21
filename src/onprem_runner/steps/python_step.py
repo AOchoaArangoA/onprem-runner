@@ -26,13 +26,22 @@ class PythonStep(StepType):
     def execute(self, ctx: StepContext, timeout: float | None) -> ProcessOutcome:
         script = self.resolve(self.params.script)
         if not script.is_file():
-            return ProcessOutcome(-1, "", f"script not found: {script}")
+            message = f"script not found: {script}"
+            if ctx.on_line is not None:
+                ctx.on_line("stderr", message)
+            return ProcessOutcome(-1, "", message)
         cwd = self.resolve(self.params.cwd) if self.params.cwd else self.base_dir
         interpreter = self.params.python or sys.executable
-        env = {"PYTHONIOENCODING": "utf-8", "ONPREM_RUN_ID": ctx.run_id, **self.params.env}
+        env = {
+            "PYTHONIOENCODING": "utf-8",
+            "PYTHONUNBUFFERED": "1",  # lines reach the log as they are printed
+            "ONPREM_RUN_ID": ctx.run_id,
+            **self.params.env,
+        }
         return run_process(
             [interpreter, str(script), *self.params.args],
             cwd=cwd,
             env=env,
             timeout=timeout,
+            on_line=ctx.on_line,
         )

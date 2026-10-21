@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 from onprem_runner.config import execution_order
 from onprem_runner.logging_utils import LOGGER_NAME
+from onprem_runner.logs import LogLine, parse_line
 from onprem_runner.models import PipelineConfig, RunResult, StepConfig, StepResult
 from onprem_runner.notifiers import Notifier
 from onprem_runner.registry import get_notifier_type, get_step_type
@@ -20,6 +23,8 @@ log = logging.getLogger(LOGGER_NAME)
 
 # (event, step_id, result): event is "step_started", "step_finished" or "step_skipped".
 EventCallback = Callable[[str, str, StepResult | None], None]
+LogCallback = Callable[[LogLine], None]
+Redactor = Callable[[str], str]
 
 
 def new_run_id() -> str:
@@ -41,12 +46,18 @@ class Runner:
         store: RunStore | None = None,
         pipeline_file: Path | None = None,
         on_event: EventCallback | None = None,
+        on_log: LogCallback | None = None,
+        redact: Redactor | None = None,
     ) -> None:
         self.config = config
         self.base_dir = base_dir
         self.store = store
         self.pipeline_file = pipeline_file
         self.on_event = on_event
+        self.on_log = on_log
+        self.redact = redact
+        self._seq = 0
+        self._seq_lock = threading.Lock()
         self._steps: list[tuple[StepConfig, StepType]] = [
             (step, get_step_type(step.type)(step, base_dir))
             for step in execution_order(config.steps)
@@ -58,6 +69,7 @@ class Runner:
     def run(self, run_id: str | None = None) -> RunResult:
         run_id = run_id or new_run_id()
         ctx = StepContext(run_id=run_id, base_dir=self.base_dir)
+        self._seq = 0
         started = datetime.now()
         log.info("run started", extra={"data": {"run_id": run_id, "pipeline": self.config.name}})
 
@@ -146,10 +158,27 @@ class Runner:
 
     def _run_step(self, cfg: StepConfig, step: StepType, ctx: StepContext) -> StepResult:
         self._emit("step_started", cfg.id, None)
-        result = self._execute(cfg, step, ctx)
+        step_ctx = replace(ctx, step_id=cfg.id, on_line=self._line_sink(ctx.run_id, cfg.id))
+        result = self._execute(cfg, step, step_ctx)
         result.ignored = cfg.ignore_failure and result.status in ("failed", "timeout")
         self._emit("step_finished", cfg.id, result)
         return result
+
+    def _line_sink(self, run_id: str, step_id: str) -> Callable[[str, str], None] | None:
+        if self.on_log is None:
+            return None
+        on_log = self.on_log
+
+        def sink(stream: str, text: str) -> None:
+            if self.redact is not None:
+                text = self.redact(text)
+            level, message, fields = parse_line(text)
+            with self._seq_lock:
+                self._seq += 1
+                seq = self._seq
+            on_log(LogLine(run_id, step_id, seq, datetime.now(), stream, level, message, fields))
+
+        return sink
 
     def _emit(self, event: str, step_id: str, result: StepResult | None) -> None:
         if self.on_event is None:
@@ -175,7 +204,10 @@ class Runner:
             try:
                 outcome = step.execute(ctx, cfg.timeout)
                 result.exit_code = outcome.exit_code
-                result.stdout, result.stderr = outcome.stdout, outcome.stderr
+                result.stdout, result.stderr = (
+                    self._clean(outcome.stdout),
+                    self._clean(outcome.stderr),
+                )
                 if outcome.timed_out:
                     result.status = "timeout"
                 else:
@@ -202,6 +234,9 @@ class Runner:
             if attempt <= cfg.retries and cfg.retry_delay:
                 time.sleep(cfg.retry_delay)
         return result
+
+    def _clean(self, text: str) -> str:
+        return self.redact(text) if self.redact is not None else text
 
     def _notify(self, run_result: RunResult) -> None:
         for notifier in self._notifiers:

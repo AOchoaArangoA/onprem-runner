@@ -33,6 +33,7 @@ class ShellStep(StepType):
             cwd=cwd,
             env=env,
             timeout=timeout,
+            on_line=ctx.on_line,
             shell=True,
             encoding=shell_encoding(),
         )
