@@ -27,6 +27,9 @@ jobs:
           path: dist/
 
   publish:
+    # Off until PyPI Trusted Publishing is set up (docs/RELEASING.md); then add the repository
+    # variable PUBLISH_TO_PYPI=true.
+    if: ${{ vars.PUBLISH_TO_PYPI == 'true' }}
     needs: build
     runs-on: ubuntu-latest
     environment: pypi

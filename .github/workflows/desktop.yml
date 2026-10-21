@@ -40,7 +40,9 @@ jobs:
 
   package:
     # Builds the portable .exe on releases and manual runs; the artifact is the deliverable.
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    # On releases only when the repository variable BUILD_DESKTOP_ON_RELEASE=true (otherwise the .exe
+    # is attached by hand, as for v0.1.0).
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && vars.BUILD_DESKTOP_ON_RELEASE == 'true')
     needs: test
     runs-on: windows-latest
     permissions:
