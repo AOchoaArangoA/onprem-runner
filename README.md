@@ -4,6 +4,8 @@ Define, run and monitor automation pipelines on local / on-premise Windows machi
 jobs that cannot live in a cloud scheduler because of OS dependencies, local
 credentials, legacy software or an internal network.
 
+> **Just want the desktop app?** Jump to [Install OPR Studio](#install-opr-studio-portable-exe): it is a single `.exe`.
+
 ```powershell
 pip install onprem-runner
 opr init            # creates pipeline.yaml and scripts/hello.py
@@ -29,6 +31,81 @@ pipelines folder next to the `.exe` (or in `%APPDATA%\OPR Studio` if that place 
   so they work with git and with the `opr` command line too.
 
 Build it yourself, run its tests and read the design in [docs/DESKTOP.md](docs/DESKTOP.md).
+
+## Install OPR Studio (portable .exe)
+
+OPR Studio needs **no installer, no admin rights and no Python** to start. It is one file.
+
+**Requirements:** Windows 10 or 11 (64-bit) and about 400 MB of free disk space while it runs
+(it unpacks itself to a temporary folder every time it starts).
+
+### 1. Download
+
+Go to the [latest release](https://github.com/AOchoaArangoA/onprem-runner/releases/latest) and
+download `OPR-Studio-<version>-portable.exe`. Optionally check the download against the SHA-256
+printed in the release notes:
+
+```powershell
+Get-FileHash .\OPR-Studio-0.1.0-portable.exe -Algorithm SHA256
+```
+
+### 2. Put it in its own folder
+
+Create a folder you own, for example `C:\Tools\OPR-Studio` (or a USB stick), and copy the `.exe` in.
+Avoid `C:\Program Files`: the app writes its data next to itself and that place is read-only for
+normal users (it would fall back to `%APPDATA%\OPR Studio`, which also works).
+
+### 3. Run it
+
+Double-click the `.exe`. The first start takes 10-15 seconds while it unpacks. Windows may show
+**"Windows protected your PC"** because the app is not code-signed: click **More info**, then
+**Run anyway**. (If your antivirus quarantines it, restore it and add the folder as an exception.)
+
+On the first run it creates, next to the `.exe`:
+
+```
+OPR-Studio-0.1.0-portable.exe
+data\        database, settings and encrypted secrets
+pipelines\   your pipeline files (.yaml): drop them here and they appear in the app
+```
+
+### 4. Where your scripts run
+
+Python steps use a Python you already have. OPR Studio finds the installed ones (and any `.venv`
+folder in your pipelines folder) and lets you pick one per step or in **Settings → Default Python**.
+If you choose *Embedded in OPR Studio*, scripts run with the built-in Python, which only has the
+standard library. On a new PC, install Python (and the packages your scripts import) first if your
+scripts need them.
+
+### Use it on another PC
+
+1. Copy the `.exe` to the other PC (or download it again from the release).
+2. To bring your work with you, also copy the **`pipelines\`** folder (and your script folders).
+   To keep the run history, copy **`data\opr.duckdb`** as well.
+3. **Secrets do not travel.** They are encrypted for your Windows user on the original PC, so on the
+   new one open **Secrets** and enter the values again. Pipelines that reference a missing secret are
+   marked in the list.
+4. Check **Settings → Pipelines folder** and **Default Python**: paths such as `C:\Python311\python.exe`
+   or script locations may differ on the new machine.
+
+### Update, move or uninstall
+
+- **Update:** close the app (right-click its tray icon → *Quit*), then replace the `.exe` with the new
+  version in the same folder. `data\` and `pipelines\` are kept.
+- **Uninstall:** quit the app and delete the folder. If you enabled *Start with Windows* in Settings,
+  turn it off first.
+- **Close button:** closing the window keeps OPR Studio running in the system tray so that scheduled
+  pipelines keep firing. Use the tray icon → *Quit* to stop it completely.
+
+### Troubleshooting
+
+| Symptom | What to do |
+|---|---|
+| Nothing appears for more than a minute | Another copy may be starting; check the tray. Delete `data\engine.lock` only if the app is not running. |
+| "The engine could not start" | Make sure the folder is writable and no antivirus is blocking `opr-engine.exe` (it is unpacked under `%TEMP%`). |
+| A script cannot find a package | The step is using a Python without it. Choose the Python or `venv` that has it (Settings or step properties). |
+| A step says a secret is missing | Add it under **Secrets** (secrets do not move between PCs). |
+| Scheduled runs did not happen | They run only while the app is open or in the tray; missed ones run once when it opens again. |
 
 ## Dashboard
 
