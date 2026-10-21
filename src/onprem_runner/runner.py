@@ -75,6 +75,7 @@ class Runner:
         redact: Redactor | None = None,
         recorder: RunRecorder | None = None,
         secrets: SecretStore | None = None,
+        default_python: str | None = None,
     ) -> None:
         self.config = config
         self.base_dir = base_dir
@@ -85,6 +86,7 @@ class Runner:
         self.redact = redact
         self.recorder = recorder
         self.secrets = secrets
+        self.default_python = default_python
         self._redact: Redactor | None = redact
         self._seq = 0
         self._seq_lock = threading.Lock()
@@ -117,7 +119,11 @@ class Runner:
         run_id = run_id or new_run_id()
         self._redact = self.redact or (self.secrets.redactor() if self.secrets else None)
         ctx = StepContext(
-            run_id=run_id, base_dir=self.base_dir, expand=self._expand, cancel=self._cancel
+            run_id=run_id,
+            base_dir=self.base_dir,
+            expand=self._expand,
+            cancel=self._cancel,
+            default_python=self.default_python,
         )
         self._seq = 0
         started = datetime.now()

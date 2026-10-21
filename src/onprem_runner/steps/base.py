@@ -33,6 +33,7 @@ class StepContext:
     on_line: LineCallback | None = None  # receives every output line as it is produced
     expand: Callable[[str], str] | None = None  # resolves ${secret:NAME} at run time
     cancel: threading.Event | None = None  # set when the user stops the run
+    default_python: str | None = None  # project-wide interpreter for python steps
 
     def expand_text(self, text: str) -> str:
         return self.expand(text) if self.expand is not None else text

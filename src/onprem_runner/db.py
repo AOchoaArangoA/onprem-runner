@@ -453,6 +453,22 @@ class Database:
             cursor.close()
         return int(stale)
 
+    def fail_run(self, run_id: str) -> None:
+        """Mark one run (and its unfinished steps) failed after an unexpected crash."""
+        self.flush()
+        cursor = self._con.cursor()
+        try:
+            cursor.execute(
+                "UPDATE step_runs SET status = 'failed' WHERE run_id = ? AND status = 'running'",
+                [run_id],
+            )
+            cursor.execute(
+                "UPDATE runs SET status = 'failed', finished_at = ? WHERE run_id = ?",
+                [datetime.now(), run_id],
+            )
+        finally:
+            cursor.close()
+
     # -- spool ingestion (runs made by `opr run` while the engine was closed) --------------
     def has_run(self, run_id: str) -> bool:
         return bool(self._rows("SELECT 1 AS x FROM runs WHERE run_id = ?", [run_id]))
