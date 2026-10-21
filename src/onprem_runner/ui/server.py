@@ -142,7 +142,12 @@ class UIState:
             Runner(config, path.parent)  # validates plugin parameters too
             info.schedule = config.schedule
             info.steps = [
-                {"id": s.id, "type": s.type, "needs": s.needs}
+                {
+                    "id": s.id,
+                    "type": s.type,
+                    "needs": s.needs_ids,
+                    "edges": [e.model_dump() for e in s.needs],
+                }
                 for s in execution_order(config.steps)
             ]
         except ConfigError as exc:

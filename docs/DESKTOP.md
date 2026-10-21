@@ -20,6 +20,9 @@ Nombre de trabajo: **OPR Studio** (la CLI `opr` y el paquete `onprem-runner` se 
 | Segundo plano | **Bandeja del sistema**: cerrar la ventana no detiene los triggers. |
 | Datos | Carpeta `data/` **junto al .exe**; si no es escribible, `%APPDATA%\OPR Studio`. |
 | Distribución | Uso interno, **sin firma digital**. Actualizar = reemplazar el .exe. |
+| Estado final de una ejecución | **Fallida si cualquier paso falló** (salvo `ignore_failure: true`). Un paso omitido no cuenta como fallo. |
+| Ejecuciones perdidas | Al volver, **una sola ejecución** si se perdió alguna (configurable por flujo). |
+| Paralelismo | **4** pasos a la vez por defecto (`max_parallel` por flujo). |
 | Hitos | **H1**: lienzo + ejecución + logs en BD. **H2**: triggers, bandeja, .exe portable final. |
 
 ## 2. Arquitectura

@@ -9,11 +9,25 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 Status = Literal["success", "failed", "timeout", "skipped"]
 NotifyWhen = Literal["always", "success", "failure"]
+EdgeWhen = Literal["success", "failure", "always"]
 Frequency = Literal["minutes", "hourly", "daily", "weekly", "startup"]
 Weekday = Literal["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _MAX_EVERY: dict[str, int] = {"minutes": 1439, "hourly": 23, "daily": 365, "weekly": 52}
+
+
+class Edge(BaseModel):
+    """A dependency: run only after ``step`` finished and its outcome matches ``when``.
+
+    ``success`` (default) needs the step to succeed; ``failure`` needs it to fail or time out;
+    ``always`` runs after it whatever happened, even if it was skipped.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    step: str
+    when: EdgeWhen = "success"
 
 
 class StepConfig(BaseModel):
@@ -23,10 +37,23 @@ class StepConfig(BaseModel):
 
     id: str
     type: str
-    needs: list[str] = Field(default_factory=list)
+    needs: list[Edge] = Field(default_factory=list)
     timeout: float | None = Field(default=None, gt=0)
     retries: int = Field(default=0, ge=0)
     retry_delay: float = Field(default=0.0, ge=0)
+    ignore_failure: bool = False
+
+    @field_validator("needs", mode="before")
+    @classmethod
+    def _plain_ids_mean_success(cls, value: Any) -> Any:
+        """Accept ``needs: [a, b]`` as shorthand for ``when: success`` edges."""
+        if isinstance(value, list):
+            return [{"step": v} if isinstance(v, str) else v for v in value]
+        return value
+
+    @property
+    def needs_ids(self) -> list[str]:
+        return [edge.step for edge in self.needs]
 
     @property
     def params(self) -> dict[str, Any]:
@@ -103,9 +130,27 @@ class PipelineConfig(BaseModel):
 
     name: str
     fail_fast: bool = True
+    max_parallel: int = Field(default=4, ge=1, le=64)
     steps: list[StepConfig] = Field(min_length=1)
     notifiers: list[NotifierConfig] = Field(default_factory=list)
     schedule: ScheduleConfig | None = None
+    ui: UiConfig | None = None
+
+
+class UiConfig(BaseModel):
+    """Editor-only data stored with the pipeline (node positions on the canvas)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    positions: dict[str, list[float]] = Field(default_factory=dict)
+
+    @field_validator("positions")
+    @classmethod
+    def _positions_are_pairs(cls, value: dict[str, list[float]]) -> dict[str, list[float]]:
+        for step, pos in value.items():
+            if len(pos) != 2:
+                raise ValueError(f"position of {step!r} must be [x, y]")
+        return value
 
 
 @dataclass
@@ -118,6 +163,7 @@ class StepResult:
     stderr: str = ""
     duration: float = 0.0
     attempts: int = 0
+    ignored: bool = False  # a failure that does not count towards the run status
 
 
 @dataclass
@@ -130,7 +176,10 @@ class RunResult:
 
     @property
     def status(self) -> Literal["success", "failed"]:
-        return "success" if all(s.status == "success" for s in self.steps) else "failed"
+        """Failed if any step failed or timed out (unless ignored). Skipped steps are normal:
+        a ``when: failure`` branch is skipped on success."""
+        broken = any(s.status in ("failed", "timeout") and not s.ignored for s in self.steps)
+        return "failed" if broken else "success"
 
     @property
     def duration(self) -> float:
@@ -152,6 +201,7 @@ class RunResult:
                     "exit_code": s.exit_code,
                     "duration": round(s.duration, 3),
                     "attempts": s.attempts,
+                    "ignored": s.ignored,
                     "stdout": s.stdout,
                     "stderr": s.stderr,
                 }

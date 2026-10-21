@@ -4,6 +4,7 @@ import logging
 import time
 import uuid
 from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from datetime import datetime
 from pathlib import Path
 
@@ -60,27 +61,14 @@ class Runner:
         started = datetime.now()
         log.info("run started", extra={"data": {"run_id": run_id, "pipeline": self.config.name}})
 
-        results: dict[str, StepResult] = {}
-        failed_any = False
-        for cfg, step in self._steps:
-            blocked = any(results[dep].status != "success" for dep in cfg.needs)
-            if blocked or (self.config.fail_fast and failed_any):
-                result = StepResult(id=cfg.id, type=cfg.type, status="skipped")
-                self._emit("step_skipped", cfg.id, result)
-                log.warning("step skipped", extra={"data": {"run_id": run_id, "step": cfg.id}})
-            else:
-                self._emit("step_started", cfg.id, None)
-                result = self._execute(cfg, step, ctx)
-                self._emit("step_finished", cfg.id, result)
-                failed_any = failed_any or result.status != "success"
-            results[cfg.id] = result
+        results = self._schedule(ctx)
 
         run_result = RunResult(
             run_id=run_id,
             pipeline=self.config.name,
             started_at=started,
             finished_at=datetime.now(),
-            steps=list(results.values()),
+            steps=[results[cfg.id] for cfg, _ in self._steps],
         )
         log.info(
             "run finished",
@@ -96,6 +84,72 @@ class Runner:
         self._save(run_result)
         self._notify(run_result)
         return run_result
+
+    def _schedule(self, ctx: StepContext) -> dict[str, StepResult]:
+        """Run steps as their dependencies settle, at most ``max_parallel`` at a time.
+
+        A step is *ready* once every step it needs has settled (finished or skipped). It then
+        runs only if every edge condition holds; otherwise it is skipped. With ``fail_fast``,
+        after a real failure only recovery steps (those with a ``failure``/``always`` edge) run.
+        """
+        results: dict[str, StepResult] = {}
+        pending = [cfg for cfg, _ in self._steps]
+        instances = {cfg.id: step for cfg, step in self._steps}
+        running: dict[Future[StepResult], StepConfig] = {}
+        failed_any = False
+
+        with ThreadPoolExecutor(max_workers=self.config.max_parallel) as pool:
+            while pending or running:
+                progressed = False
+                for cfg in list(pending):
+                    if not all(dep in results for dep in cfg.needs_ids):
+                        continue
+                    if self._should_skip(cfg, results, failed_any):
+                        pending.remove(cfg)
+                        progressed = True
+                        results[cfg.id] = StepResult(id=cfg.id, type=cfg.type, status="skipped")
+                        self._emit("step_skipped", cfg.id, results[cfg.id])
+                        log.warning(
+                            "step skipped", extra={"data": {"run_id": ctx.run_id, "step": cfg.id}}
+                        )
+                    elif len(running) < self.config.max_parallel:
+                        # Submit only into a free slot so fail_fast can still cancel what
+                        # has not started yet.
+                        pending.remove(cfg)
+                        progressed = True
+                        running[pool.submit(self._run_step, cfg, instances[cfg.id], ctx)] = cfg
+                if progressed:
+                    continue  # a skip may have made other steps ready
+                if not running:
+                    raise RuntimeError(f"unschedulable steps: {[c.id for c in pending]}")
+                done, _ = wait(running, return_when=FIRST_COMPLETED)
+                for future in done:
+                    cfg = running.pop(future)
+                    results[cfg.id] = future.result()
+                    failed_any = failed_any or (
+                        results[cfg.id].status in ("failed", "timeout")
+                        and not results[cfg.id].ignored
+                    )
+        return results
+
+    def _should_skip(
+        self, cfg: StepConfig, results: dict[str, StepResult], failed_any: bool
+    ) -> bool:
+        for edge in cfg.needs:
+            status = results[edge.step].status
+            if edge.when == "success" and status != "success":
+                return True
+            if edge.when == "failure" and status not in ("failed", "timeout"):
+                return True
+        is_recovery = any(edge.when in ("failure", "always") for edge in cfg.needs)
+        return self.config.fail_fast and failed_any and not is_recovery
+
+    def _run_step(self, cfg: StepConfig, step: StepType, ctx: StepContext) -> StepResult:
+        self._emit("step_started", cfg.id, None)
+        result = self._execute(cfg, step, ctx)
+        result.ignored = cfg.ignore_failure and result.status in ("failed", "timeout")
+        self._emit("step_finished", cfg.id, result)
+        return result
 
     def _emit(self, event: str, step_id: str, result: StepResult | None) -> None:
         if self.on_event is None:

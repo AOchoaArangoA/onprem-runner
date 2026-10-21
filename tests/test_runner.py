@@ -32,6 +32,7 @@ def test_failure_skips_dependents_and_fail_fast(project: Path) -> None:
         project,
         """
 name: p
+max_parallel: 1
 steps:
   - {id: bad, type: python, script: scripts/fail.py}
   - {id: after, type: python, script: scripts/ok.py, needs: [bad]}

@@ -59,17 +59,21 @@ def execution_order(steps: list[StepConfig]) -> list[StepConfig]:
             raise ConfigError(f"duplicate step id {step.id!r}")
         by_id[step.id] = step
     for step in steps:
-        for dep in step.needs:
+        seen: set[str] = set()
+        for dep in step.needs_ids:
             if dep not in by_id:
                 raise ConfigError(f"step {step.id!r} needs unknown step {dep!r}")
             if dep == step.id:
                 raise ConfigError(f"step {step.id!r} cannot depend on itself")
+            if dep in seen:
+                raise ConfigError(f"step {step.id!r} lists {dep!r} more than once in needs")
+            seen.add(dep)
 
     ordered: list[StepConfig] = []
     done: set[str] = set()
     pending = list(steps)
     while pending:
-        ready = next((s for s in pending if all(d in done for d in s.needs)), None)
+        ready = next((s for s in pending if all(d in done for d in s.needs_ids)), None)
         if ready is None:
             cycle = ", ".join(s.id for s in pending)
             raise ConfigError(f"dependency cycle among steps: {cycle}")
