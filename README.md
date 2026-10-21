@@ -70,7 +70,7 @@ the dashboard history like any other.
 
 ```powershell
 pip install "onprem-runner[mcp]"
-claude mcp add onprem-runner -- opr mcp C:utomations
+claude mcp add onprem-runner -- opr mcp C:\automations
 ```
 
 Use the full path to `opr.exe` if it is not on your `PATH`. Add `--scope project` to share the
