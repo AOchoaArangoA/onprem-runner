@@ -232,6 +232,66 @@ def mcp(
 
 
 @app.command()
+def serve(
+    data_dir: Annotated[
+        Path | None, typer.Option(help="Folder for the database, secrets and settings.")
+    ] = None,
+    workspace: Annotated[
+        Path | None, typer.Option(help="Folder with the pipeline files (remembered in settings).")
+    ] = None,
+    host: Annotated[str, typer.Option(help="Interface to bind; keep 127.0.0.1.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port; 0 picks a free one.")] = 0,
+    ui_dir: Annotated[Path | None, typer.Option(help="Built web UI to serve at /.")] = None,
+) -> None:
+    """Run the engine (used by the desktop app). Needs `pip install "onprem-runner[studio]"`.
+
+    Reads the API token from OPR_TOKEN (or generates one and prints it). Prints one JSON
+    line on stdout when ready: {"event": "ready", "port": ..., "pid": ...}.
+    """
+    import json
+    import os
+    import secrets as secrets_module
+
+    try:
+        from onprem_runner.engine.api import EngineAlreadyRunning
+        from onprem_runner.engine.api import serve as run_engine
+    except ImportError as exc:
+        raise _fail('the engine needs: pip install "onprem-runner[studio]"') from exc
+    from onprem_runner.paths import default_data_dir, default_ui_dir
+
+    setup_logging()
+    token = os.environ.get("OPR_TOKEN")
+    generated = token is None
+    token = token or secrets_module.token_urlsafe(32)
+    resolved_data = data_dir or default_data_dir()
+
+    def announce(server: object) -> None:
+        info: dict[str, object] = {
+            "event": "ready",
+            "host": host,
+            "port": server.server_address[1],  # type: ignore[attr-defined]
+            "pid": os.getpid(),
+            "data_dir": str(resolved_data),
+        }
+        if generated:
+            info["token"] = token
+        print(json.dumps(info), flush=True)
+
+    try:
+        run_engine(
+            resolved_data,
+            workspace=workspace,
+            host=host,
+            port=port,
+            token=token,
+            ui_dir=ui_dir or default_ui_dir(),
+            on_ready=announce,
+        )
+    except EngineAlreadyRunning as exc:
+        raise _fail(str(exc)) from exc
+
+
+@app.command()
 def version() -> None:
     """Print the installed version."""
     typer.echo(__version__)
