@@ -323,3 +323,20 @@ def test_email_password_is_resolved_from_the_secret_store(
     now = datetime.now()
     notifier.notify(RunResult("r1", "demo", now, now, [StepResult("a", "shell", "success", 0)]))
     assert FakeSMTP.logins == [("bot@test", "mail-pass-1")]
+
+
+def test_the_store_can_be_created_where_dpapi_does_not_exist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The engine must start on any OS; only touching a secret needs the cipher."""
+
+    class NoDpapi:
+        def __init__(self) -> None:
+            raise SecretError("encrypted secrets need Windows (DPAPI); not available on this OS")
+
+    monkeypatch.setattr("onprem_runner.secrets_store.DpapiCipher", NoDpapi)
+    store = SecretStore(tmp_path / "secrets.json")
+    assert store.names() == []  # reading the (empty) list needs no cipher
+    assert store.redactor()("nothing to hide") == "nothing to hide"
+    with pytest.raises(SecretError, match="Windows"):
+        store.set("TOKEN", "value-123")

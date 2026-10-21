@@ -49,6 +49,8 @@ class DpapiCipher:
 
 
 def _dpapi(data: bytes, *, protect: bool) -> bytes:
+    if sys.platform != "win32":
+        raise SecretError("encrypted secrets need Windows (DPAPI); not available on this OS")
     import ctypes
     from ctypes import wintypes
 
@@ -83,8 +85,16 @@ def _dpapi(data: bytes, *, protect: bool) -> bytes:
 class SecretStore:
     def __init__(self, path: Path, cipher: Cipher | None = None) -> None:
         self.path = path
-        self.cipher: Cipher = cipher or DpapiCipher()
+        self._cipher = cipher
         self._lock = threading.Lock()
+
+    @property
+    def cipher(self) -> Cipher:
+        """Created on first use, so the engine also starts where DPAPI does not exist: only
+        reading or writing a secret fails there, with a clear message."""
+        if self._cipher is None:
+            self._cipher = DpapiCipher()
+        return self._cipher
 
     # -- management (what the UI may do) ------------------------------------------------
     def names(self) -> list[str]:
