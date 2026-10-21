@@ -9,6 +9,7 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 
 from onprem_runner.config import execution_order
 from onprem_runner.logging_utils import LOGGER_NAME
@@ -31,6 +32,28 @@ def new_run_id() -> str:
     return f"{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
 
 
+class RunRecorder(Protocol):
+    """Receives everything that happens in a run (implemented by the DuckDB layer).
+
+    Calls must be cheap and non-blocking: they happen on the step threads.
+    """
+
+    def run_started(
+        self,
+        run_id: str,
+        pipeline_name: str,
+        pipeline_file: Path | None,
+        trigger: str,
+        started_at: datetime,
+    ) -> None: ...
+    def step_started(
+        self, run_id: str, step_id: str, step_type: str, started_at: datetime
+    ) -> None: ...
+    def step_finished(self, run_id: str, result: StepResult) -> None: ...
+    def log(self, line: LogLine) -> None: ...
+    def run_finished(self, result: RunResult) -> None: ...
+
+
 class Runner:
     """Executes a pipeline's steps in dependency order, then dispatches notifiers.
 
@@ -48,6 +71,7 @@ class Runner:
         on_event: EventCallback | None = None,
         on_log: LogCallback | None = None,
         redact: Redactor | None = None,
+        recorder: RunRecorder | None = None,
     ) -> None:
         self.config = config
         self.base_dir = base_dir
@@ -56,6 +80,7 @@ class Runner:
         self.on_event = on_event
         self.on_log = on_log
         self.redact = redact
+        self.recorder = recorder
         self._seq = 0
         self._seq_lock = threading.Lock()
         self._steps: list[tuple[StepConfig, StepType]] = [
@@ -66,12 +91,15 @@ class Runner:
             get_notifier_type(n.type)(n, base_dir) for n in config.notifiers
         ]
 
-    def run(self, run_id: str | None = None) -> RunResult:
+    def run(self, run_id: str | None = None, trigger: str = "cli") -> RunResult:
         run_id = run_id or new_run_id()
         ctx = StepContext(run_id=run_id, base_dir=self.base_dir)
         self._seq = 0
         started = datetime.now()
         log.info("run started", extra={"data": {"run_id": run_id, "pipeline": self.config.name}})
+        self._record(
+            lambda r: r.run_started(run_id, self.config.name, self.pipeline_file, trigger, started)
+        )
 
         results = self._schedule(ctx)
 
@@ -93,6 +121,7 @@ class Runner:
                 }
             },
         )
+        self._record(lambda r: r.run_finished(run_result))
         self._save(run_result)
         self._notify(run_result)
         return run_result
@@ -119,8 +148,10 @@ class Runner:
                     if self._should_skip(cfg, results, failed_any):
                         pending.remove(cfg)
                         progressed = True
-                        results[cfg.id] = StepResult(id=cfg.id, type=cfg.type, status="skipped")
-                        self._emit("step_skipped", cfg.id, results[cfg.id])
+                        skipped = StepResult(id=cfg.id, type=cfg.type, status="skipped")
+                        results[cfg.id] = skipped
+                        self._emit("step_skipped", cfg.id, skipped)
+                        self._record_step_finished(ctx.run_id, skipped)
                         log.warning(
                             "step skipped", extra={"data": {"run_id": ctx.run_id, "step": cfg.id}}
                         )
@@ -158,16 +189,28 @@ class Runner:
 
     def _run_step(self, cfg: StepConfig, step: StepType, ctx: StepContext) -> StepResult:
         self._emit("step_started", cfg.id, None)
+        self._record(lambda r: r.step_started(ctx.run_id, cfg.id, cfg.type, datetime.now()))
         step_ctx = replace(ctx, step_id=cfg.id, on_line=self._line_sink(ctx.run_id, cfg.id))
         result = self._execute(cfg, step, step_ctx)
         result.ignored = cfg.ignore_failure and result.status in ("failed", "timeout")
         self._emit("step_finished", cfg.id, result)
+        self._record_step_finished(ctx.run_id, result)
         return result
 
+    def _record_step_finished(self, run_id: str, result: StepResult) -> None:
+        self._record(lambda r: r.step_finished(run_id, result))
+
+    def _record(self, call: Callable[[RunRecorder], None]) -> None:
+        if self.recorder is None:
+            return
+        try:
+            call(self.recorder)
+        except Exception:  # recording problems must never break a run
+            log.exception("run recorder failed")
+
     def _line_sink(self, run_id: str, step_id: str) -> Callable[[str, str], None] | None:
-        if self.on_log is None:
+        if self.on_log is None and self.recorder is None:
             return None
-        on_log = self.on_log
 
         def sink(stream: str, text: str) -> None:
             if self.redact is not None:
@@ -176,7 +219,10 @@ class Runner:
             with self._seq_lock:
                 self._seq += 1
                 seq = self._seq
-            on_log(LogLine(run_id, step_id, seq, datetime.now(), stream, level, message, fields))
+            line = LogLine(run_id, step_id, seq, datetime.now(), stream, level, message, fields)
+            if self.on_log is not None:
+                self.on_log(line)
+            self._record(lambda r: r.log(line))
 
         return sink
 
@@ -197,7 +243,7 @@ class Runner:
             log.error("could not save run history", extra={"data": {"error": str(exc)}})
 
     def _execute(self, cfg: StepConfig, step: StepType, ctx: StepContext) -> StepResult:
-        result = StepResult(id=cfg.id, type=cfg.type, status="failed")
+        result = StepResult(id=cfg.id, type=cfg.type, status="failed", started_at=datetime.now())
         for attempt in range(1, cfg.retries + 2):
             result.attempts = attempt
             start = time.monotonic()
@@ -233,6 +279,7 @@ class Runner:
                 break
             if attempt <= cfg.retries and cfg.retry_delay:
                 time.sleep(cfg.retry_delay)
+        result.finished_at = datetime.now()
         return result
 
     def _clean(self, text: str) -> str:

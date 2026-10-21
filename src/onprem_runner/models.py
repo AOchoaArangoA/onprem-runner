@@ -164,6 +164,8 @@ class StepResult:
     duration: float = 0.0
     attempts: int = 0
     ignored: bool = False  # a failure that does not count towards the run status
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 @dataclass
@@ -202,6 +204,8 @@ class RunResult:
                     "duration": round(s.duration, 3),
                     "attempts": s.attempts,
                     "ignored": s.ignored,
+                    "started_at": s.started_at.isoformat() if s.started_at else None,
+                    "finished_at": s.finished_at.isoformat() if s.finished_at else None,
                     "stdout": s.stdout,
                     "stderr": s.stderr,
                 }
