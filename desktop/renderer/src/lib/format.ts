@@ -17,7 +17,7 @@ export function parseTime(iso: string): Date {
 
 export function formatClock(iso: string, withMillis = false): string {
   const d = parseTime(iso);
-  const base = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const base = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   return withMillis ? `${base}.${String(d.getMilliseconds()).padStart(3, '0')}` : base;
 }
 

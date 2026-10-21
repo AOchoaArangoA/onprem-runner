@@ -13,7 +13,9 @@
     "build": "npm run build:renderer && npm run build:main",
     "typecheck": "tsc -p renderer/tsconfig.json --noEmit && tsc -p main/tsconfig.json --noEmit && tsc -p e2e/tsconfig.json --noEmit",
     "test": "vitest run --config renderer/vitest.config.mts",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "build:engine": "python engine/build_engine.py",
+    "dist": "npm run build && electron-builder --win portable --x64"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.0",
@@ -35,5 +37,56 @@
     "typescript": "~5.9.3",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
+  },
+  "build": {
+    "appId": "io.github.aochoaarangoa.oprstudio",
+    "productName": "OPR Studio",
+    "copyright": "Copyright (c) 2026 AOchoaArangoA",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main/dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "renderer/dist",
+        "to": "ui"
+      },
+      {
+        "from": "engine-dist/opr-engine",
+        "to": "engine"
+      },
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": [
+          "icon.png",
+          "tray.png"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "OPR-Studio-${version}-portable.exe"
+    },
+    "asar": true,
+    "compression": "normal",
+    "electronLanguages": [
+      "es",
+      "en-US"
+    ]
   }
 }

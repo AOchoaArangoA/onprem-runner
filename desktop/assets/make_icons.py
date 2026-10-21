@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import struct
 import zlib
+from itertools import pairwise
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -65,7 +66,7 @@ def is_white(x, y):
         if math.hypot(x - nx, y - ny) <= r:
             return True
     for curve in CURVES:
-        for a, b in zip(curve, curve[1:], strict=False):
+        for a, b in pairwise(curve):
             if seg_distance(x, y, a, b) <= STROKE:
                 return True
     return False
@@ -88,7 +89,8 @@ def render(size: int, transparent_tile: bool = False) -> bytes:
                     else:
                         mix = y
                         color = tuple(
-                            round(ACCENT_TOP[k] * (1 - mix) + ACCENT_BOTTOM[k] * mix) for k in range(3)
+                            round(ACCENT_TOP[k] * (1 - mix) + ACCENT_BOTTOM[k] * mix)
+                            for k in range(3)
                         )
                     r += color[0]
                     g += color[1]
@@ -106,11 +108,18 @@ def render(size: int, transparent_tile: bool = False) -> bytes:
 def png(size: int, rows: list[bytes]) -> bytes:
     def chunk(kind: bytes, data: bytes) -> bytes:
         body = kind + data
-        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        return (
+            struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+        )
 
     raw = b"".join(b"\x00" + row for row in rows)
     header = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
 
 
 def ico(images: dict[int, bytes]) -> bytes:

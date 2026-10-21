@@ -13,3 +13,6 @@ htmlcov/
 out/
 .env
 .opr/
+desktop/engine/build/
+desktop/engine-dist/
+.build-venv/

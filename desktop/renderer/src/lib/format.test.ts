@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeSchedule, formatBytes, formatDuration, relativeTime, timelineBars } from './format';
+import { describeSchedule, formatBytes, formatClock, formatDuration, relativeTime, timelineBars } from './format';
 
 describe('formatDuration', () => {
   it.each([
@@ -72,5 +72,13 @@ describe('timelineBars', () => {
   it('handles runs with no timestamps', () => {
     expect(timelineBars([{ started_at: null, finished_at: null }])).toEqual([null]);
     expect(timelineBars([])).toEqual([]);
+  });
+});
+
+describe('formatClock', () => {
+  it('uses 24 hours and puts the milliseconds last', () => {
+    expect(formatClock('2026-10-05T22:21:38.252', true)).toBe('22:21:38.252');
+    expect(formatClock('2026-10-05T07:05:09.004', true)).toBe('07:05:09.004');
+    expect(formatClock('2026-10-05T22:21:38.252')).toBe('22:21:38');
   });
 });

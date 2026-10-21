@@ -73,8 +73,7 @@ def detect(workspace: Path | None = None) -> list[Interpreter]:
         located = shutil.which(name)
         if located:
             candidates.append((located, "path"))
-    if getattr(sys, "frozen", False):
-        candidates.append((sys.executable, "engine"))
+    # Not the packaged engine itself: it only runs scripts through `embedded`, not as a python.exe.
 
     seen: set[str] = set()
     result: list[Interpreter] = []

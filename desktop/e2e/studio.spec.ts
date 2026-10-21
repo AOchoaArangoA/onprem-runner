@@ -14,6 +14,13 @@ test.describe('pipelines list', () => {
     await expect(studio.page.locator('.card', { hasText: 'Nightly backup' })).toContainText('Daily at 02:00');
   });
 
+  test('notices a YAML file copied into the folder while it is open', async ({ studio }) => {
+    await studio.open();
+    await expect(studio.page.getByText('No pipelines yet')).toBeVisible();
+    studio.writePipeline('dropped.yaml', SIMPLE_FLOW.replace('Demo flow', 'Dropped in'));
+    await expect(studio.page.locator('.card', { hasText: 'Dropped in' })).toBeVisible({ timeout: 15_000 });
+  });
+
   test('flags an invalid pipeline instead of hiding it', async ({ studio }) => {
     studio.writePipeline('broken.yaml', 'name: Broken\nsteps:\n  - {id: x, type: nope}\n');
     await studio.open();

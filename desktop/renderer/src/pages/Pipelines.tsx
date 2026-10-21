@@ -1,5 +1,5 @@
 import { AlertTriangle, Clock, KeyRound, Pencil, Play, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { PipelineSummary } from '../api/types';
@@ -16,6 +16,14 @@ export function PipelinesPage() {
   const toast = useApp((s) => s.toast);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<PipelineSummary | null>(null);
+
+  // YAML files copied into the folder by hand raise no event, so look for them periodically.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!document.hidden) void useApp.getState().refreshPipelines();
+    }, 4000);
+    return () => clearInterval(id);
+  }, []);
 
   const stats = engine?.stats;
   const rate = stats?.success_rate;
