@@ -44,4 +44,5 @@ class PythonStep(StepType):
             env=env,
             timeout=timeout,
             on_line=ctx.on_line,
+            cancel=ctx.cancel,
         )

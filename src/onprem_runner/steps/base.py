@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ LineCallback = Callable[[str, str], None]  # (stream: "stdout" | "stderr", text 
 
 MAX_CAPTURED_CHARS = 2_000_000  # per stream kept in memory; lines are still streamed in full
 READER_JOIN_SECONDS = 5.0
+CANCEL_POLL_SECONDS = 0.2
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,7 @@ class StepContext:
     step_id: str = ""
     on_line: LineCallback | None = None  # receives every output line as it is produced
     expand: Callable[[str], str] | None = None  # resolves ${secret:NAME} at run time
+    cancel: threading.Event | None = None  # set when the user stops the run
 
     def expand_text(self, text: str) -> str:
         return self.expand(text) if self.expand is not None else text
@@ -41,6 +44,7 @@ class ProcessOutcome:
     stdout: str = ""
     stderr: str = ""
     timed_out: bool = False
+    cancelled: bool = False
 
 
 class StepType(ABC):
@@ -74,6 +78,7 @@ def run_process(
     shell: bool = False,
     encoding: str = "utf-8",
     on_line: LineCallback | None = None,
+    cancel: threading.Event | None = None,
 ) -> ProcessOutcome:
     """Run a subprocess, streaming its output line by line; never raises for process failures.
 
@@ -116,13 +121,25 @@ def run_process(
     for reader in readers:
         reader.start()
 
-    timed_out = False
-    try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        _kill_tree(proc)
-        proc.wait()
+    timed_out = cancelled = False
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while True:
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining <= 0:
+            timed_out = True
+            _kill_tree(proc)
+            proc.wait()
+            break
+        try:
+            # With a cancel event, wake up often enough to notice it.
+            proc.wait(timeout=CANCEL_POLL_SECONDS if cancel is not None else remaining)
+            break
+        except subprocess.TimeoutExpired:
+            if cancel is not None and cancel.is_set():
+                cancelled = True
+                _kill_tree(proc)
+                proc.wait()
+                break
     for reader in readers:  # bounded: a surviving grandchild can keep the pipe open
         reader.join(timeout=READER_JOIN_SECONDS)
 
@@ -131,10 +148,11 @@ def run_process(
         return "\n".join(lines) + "\n" if lines else ""
 
     return ProcessOutcome(
-        None if timed_out else proc.returncode,
+        None if timed_out or cancelled else proc.returncode,
         joined("stdout"),
         joined("stderr"),
         timed_out=timed_out,
+        cancelled=cancelled,
     )
 
 

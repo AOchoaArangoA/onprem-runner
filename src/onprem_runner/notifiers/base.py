@@ -28,9 +28,11 @@ class Notifier(ABC):
             raise ConfigError(f"notifier ({config.type}): {exc}") from exc
 
     def should_notify(self, result: RunResult) -> bool:
-        return self.config.when == "always" or self.config.when == (
-            "success" if result.status == "success" else "failure"
-        )
+        if self.config.when == "always":
+            return True
+        if result.status == "cancelled":  # stopping a run by hand is neither success nor failure
+            return False
+        return self.config.when == ("success" if result.status == "success" else "failure")
 
     @abstractmethod
     def notify(self, result: RunResult) -> None: ...

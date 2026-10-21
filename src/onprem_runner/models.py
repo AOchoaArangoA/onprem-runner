@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-Status = Literal["success", "failed", "timeout", "skipped"]
+Status = Literal["success", "failed", "timeout", "skipped", "cancelled"]
 NotifyWhen = Literal["always", "success", "failure"]
 EdgeWhen = Literal["success", "failure", "always"]
 Frequency = Literal["minutes", "hourly", "daily", "weekly", "startup"]
@@ -175,11 +175,14 @@ class RunResult:
     started_at: datetime
     finished_at: datetime
     steps: list[StepResult] = field(default_factory=list)
+    cancelled: bool = False
 
     @property
-    def status(self) -> Literal["success", "failed"]:
+    def status(self) -> Literal["success", "failed", "cancelled"]:
         """Failed if any step failed or timed out (unless ignored). Skipped steps are normal:
         a ``when: failure`` branch is skipped on success."""
+        if self.cancelled:
+            return "cancelled"
         broken = any(s.status in ("failed", "timeout") and not s.ignored for s in self.steps)
         return "failed" if broken else "success"
 
