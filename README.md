@@ -1,5 +1,11 @@
 # onprem-runner
 
+## ⬇️ Download OPR Studio for Windows
+
+**[OPR-Studio-0.1.0-portable.exe](https://github.com/AOchoaArangoA/onprem-runner/releases/download/v0.1.0/OPR-Studio-0.1.0-portable.exe)** (116 MB, Windows 10/11 64-bit, no installer and no Python needed) · [all releases](https://github.com/AOchoaArangoA/onprem-runner/releases) · [how to install it](#install-opr-studio-portable-exe)
+
+> On GitHub the downloads live under **Releases** in the right-hand column of this page.
+
 Define, run and monitor automation pipelines on local / on-premise Windows machines:
 jobs that cannot live in a cloud scheduler because of OS dependencies, local
 credentials, legacy software or an internal network.
