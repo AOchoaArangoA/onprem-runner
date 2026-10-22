@@ -2,7 +2,7 @@
 
 ## ⬇️ Download OPR Studio for Windows
 
-**[OPR-Studio-0.1.0-portable.exe](https://github.com/AOchoaArangoA/onprem-runner/releases/download/v0.1.0/OPR-Studio-0.1.0-portable.exe)** (116 MB, Windows 10/11 64-bit, no installer and no Python needed) · [all releases](https://github.com/AOchoaArangoA/onprem-runner/releases) · [how to install it](#install-opr-studio-portable-exe)
+**[OPR-Studio-0.1.1-portable.exe](https://github.com/AOchoaArangoA/onprem-runner/releases/download/v0.1.1/OPR-Studio-0.1.1-portable.exe)** (116 MB, Windows 10/11 64-bit, no installer and no Python needed) · [all releases](https://github.com/AOchoaArangoA/onprem-runner/releases) · [how to install it](#install-opr-studio-portable-exe)
 
 > On GitHub the downloads live under **Releases** in the right-hand column of this page.
 
@@ -52,8 +52,15 @@ download `OPR-Studio-<version>-portable.exe`. Optionally check the download agai
 printed in the release notes:
 
 ```powershell
-Get-FileHash .\OPR-Studio-0.1.0-portable.exe -Algorithm SHA256
+Get-FileHash .\OPR-Studio-0.1.1-portable.exe -Algorithm SHA256
 ```
+
+**Slow start or nothing seems to happen?** The portable `.exe` unpacks ~420 MB every time it starts
+(10-20 s, more if the antivirus scans it) and shows nothing until it is done. Download
+`OPR-Studio-<version>-win-x64.zip` instead: unzip it once to a folder and run `OPR Studio.exe` inside;
+it starts in a few seconds. Start-up steps are logged to `data\startup.log`. To check a download on a new PC,
+run [`scripts/verify-portable.ps1`](scripts/verify-portable.ps1) (it downloads the `.exe`, runs a test pipeline
+in a throwaway folder and prints PASS/FAIL).
 
 ### 2. Put it in its own folder
 
@@ -70,7 +77,7 @@ Double-click the `.exe`. The first start takes 10-15 seconds while it unpacks. W
 On the first run it creates, next to the `.exe`:
 
 ```
-OPR-Studio-0.1.0-portable.exe
+OPR-Studio-0.1.1-portable.exe
 data\        database, settings and encrypted secrets
 pipelines\   your pipeline files (.yaml): drop them here and they appear in the app
 ```

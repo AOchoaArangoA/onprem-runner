@@ -1,6 +1,6 @@
 {
   "name": "opr-studio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OPR Studio: visual orchestration of local automation pipelines",
   "private": true,
   "main": "main/dist/main.js",

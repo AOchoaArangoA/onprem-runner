@@ -9,6 +9,7 @@ import {
   shell,
   Tray,
 } from 'electron';
+import fs from 'node:fs';
 import path from 'node:path';
 import {
   api,
@@ -151,6 +152,46 @@ async function requestQuit(): Promise<void> {
   app.quit();
 }
 
+// -- startup feedback ------------------------------------------------------------------------------
+
+/** Appends to `<data>/startup.log`, so a slow or failed start on another PC can be diagnosed. */
+function logStartup(message: string): void {
+  try {
+    const dir = dataDir();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'startup.log'), `${new Date().toISOString()} ${message}\n`);
+  } catch {
+    /* logging must never break the start */
+  }
+}
+
+let splash: BrowserWindow | null = null;
+
+/** A small window shown at once, because the engine needs a few seconds to boot. */
+function showSplash(): void {
+  splash = new BrowserWindow({
+    width: 360,
+    height: 180,
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    backgroundColor: '#0e1117',
+    icon: path.join(assets, 'icon.png'),
+  });
+  const html = `<body style="margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:12px;background:#0e1117;color:#e6edf3;font:15px Segoe UI,sans-serif">
+    <b style="font-size:20px">OPR Studio</b><span>${text('Iniciando el motor…', 'Starting the engine…')}</span></body>`;
+  void splash.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  splash.on('closed', () => {
+    splash = null;
+  });
+}
+
+function closeSplash(): void {
+  if (splash && !splash.isDestroyed()) splash.close();
+}
+
 // -- window ----------------------------------------------------------------------------------------
 
 function showWindow(): void {
@@ -180,6 +221,8 @@ function createWindow(): void {
   });
 
   win.once('ready-to-show', () => {
+    closeSplash();
+    logStartup('window ready');
     if (!START_HIDDEN) win?.show();
   });
 
@@ -335,10 +378,15 @@ if (!SINGLE_INSTANCE) {
   });
 
   void app.whenReady().then(async () => {
+    logStartup(`start v${app.getVersion()} (${process.versions.electron}) from ${app.getPath('exe')}`);
+    if (!START_HIDDEN) showSplash();
     registerIpc();
     try {
       engine = await bootEngine();
+      logStartup(`engine ready on port ${engine.port}`);
     } catch (error) {
+      logStartup(`engine failed: ${String(error)}`);
+      closeSplash();
       dialog.showErrorBox(
         'OPR Studio',
         text('No se pudo iniciar el motor.\n\n', 'The engine could not start.\n\n') + String(error),

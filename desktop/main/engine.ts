@@ -19,7 +19,7 @@ export interface RunningEngine {
   url: string;
 }
 
-const READY_TIMEOUT_MS = 45_000;
+const READY_TIMEOUT_MS = 120_000; // generous: antivirus scans the first start on a new PC
 
 export function isWritable(directory: string): boolean {
   try {
